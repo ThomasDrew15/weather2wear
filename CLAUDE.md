@@ -3,7 +3,7 @@
 From-scratch rebuild of a dissertation project: a web app that recommends clothing based on weather. New stack, new infra — not an iteration on old code.
 
 ## Current status
-Milestone 0 (due diligence) is complete — scope, architecture, data model, API contracts, and threat model are all resolved. Starting Milestone 1 (Infra Bootstrap).
+Milestone 0 (due diligence) and Milestone 1 (Infra Bootstrap) are complete — see the engineering log for what was actually built and what went wrong along the way. Starting Milestone 2 (Data & Secrets).
 
 ## Full context (read these for detail — don't ask the user to re-explain)
 @docs/weather-outfit-advisor-v1-scope.md
@@ -12,6 +12,7 @@ Milestone 0 (due diligence) is complete — scope, architecture, data model, API
 @docs/weather-outfit-advisor-data-model.md
 @docs/weather-outfit-advisor-api-contracts.md
 @docs/weather-outfit-advisor-threat-model.md
+@docs/engineering-log/README.md
 
 ## Stack (short version — see architecture doc for full reasoning)
 - TypeScript throughout
