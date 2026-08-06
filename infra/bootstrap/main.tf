@@ -83,6 +83,21 @@ resource "azurerm_role_assignment" "bootstrap_operator" {
   principal_id         = data.azurerm_client_config.current.object_id
 }
 
+# Same reasoning as the github_actions_tfstate_* assignments below: local
+# `terraform init`/`plan`/`apply` in dev/live now uses use_azuread_auth too,
+# so the local operator needs the same two roles on the storage account.
+resource "azurerm_role_assignment" "bootstrap_operator_tfstate_reader" {
+  scope                = azurerm_storage_account.tfstate.id
+  role_definition_name = "Reader"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "azurerm_role_assignment" "bootstrap_operator_tfstate_blob_contributor" {
+  scope                = azurerm_storage_account.tfstate.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
 # --- dev/live resource group containers -----------------------------------
 # Pre-created here (rather than by the dev/live environments themselves) so
 # the GitHub Actions OIDC identity below can be scoped to specific resource
@@ -138,5 +153,22 @@ resource "azurerm_role_assignment" "github_actions_dev" {
 resource "azurerm_role_assignment" "github_actions_live" {
   scope                = azurerm_resource_group.live.id
   role_definition_name = "Contributor"
+  principal_id         = azuread_service_principal.github_actions.object_id
+}
+
+# The azurerm backend also needs to read/write the tfstate storage account
+# itself for `terraform init`/`plan` to work at all. Scoped to just the
+# storage account, not the whole rg-woa-bootstrap RG, so this identity still
+# never gets Key Vault access — discovered as a genuine 403 on the first
+# real CI run, not assumed up front.
+resource "azurerm_role_assignment" "github_actions_tfstate_reader" {
+  scope                = azurerm_storage_account.tfstate.id
+  role_definition_name = "Reader"
+  principal_id         = azuread_service_principal.github_actions.object_id
+}
+
+resource "azurerm_role_assignment" "github_actions_tfstate_blob_contributor" {
+  scope                = azurerm_storage_account.tfstate.id
+  role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azuread_service_principal.github_actions.object_id
 }
