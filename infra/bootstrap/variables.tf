@@ -28,6 +28,23 @@ variable "github_repo" {
   default     = "weather2wear"
 }
 
+# GitHub's OIDC subject claim includes immutable numeric IDs alongside the
+# owner/repo names (repo:OWNER@OWNER_ID/REPO@REPO_ID:ref:...), confirmed
+# against the actual failed-then-fixed federated credential subject during
+# Milestone 1. Fetch via `gh api users/<org> --jq .id` and
+# `gh api repos/<org>/<repo> --jq .id` if these ever need to change.
+variable "github_org_id" {
+  description = "Numeric GitHub user/org ID for ThomasDrew15, required in the OIDC subject claim."
+  type        = string
+  default     = "64072983"
+}
+
+variable "github_repo_id" {
+  description = "Numeric GitHub repository ID for weather2wear, required in the OIDC subject claim."
+  type        = string
+  default     = "1325907832"
+}
+
 variable "github_branch" {
   description = "Branch the OIDC federated credential trusts. Deploy-capable CI only runs from this branch, never PRs from forks."
   type        = string

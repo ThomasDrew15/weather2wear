@@ -124,7 +124,7 @@ resource "azuread_application_federated_identity_credential" "github_actions_mai
   description    = "GitHub Actions on push to ${var.github_branch} in ${var.github_org}/${var.github_repo}."
   audiences      = ["api://AzureADTokenExchange"]
   issuer         = "https://token.actions.githubusercontent.com"
-  subject        = "repo:${var.github_org}/${var.github_repo}:ref:refs/heads/${var.github_branch}"
+  subject        = "repo:${var.github_org}@${var.github_org_id}/${var.github_repo}@${var.github_repo_id}:ref:refs/heads/${var.github_branch}"
 }
 
 # Contributor scoped to the two app resource groups only — never
