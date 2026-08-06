@@ -1,8 +1,8 @@
-← [Engineering Log](./README.md)
+← [README](../README.md)
 
 # Milestone 1 — Infra Bootstrap
 
-**Goal (from the [build order doc](../weather-outfit-advisor-build-order.md)):**
+**Goal (from the [build order doc](./weather-outfit-advisor-build-order.md)):**
 - `bootstrap` Terraform module (state storage account + container, initial Key Vault)
 - `environments/dev` and `environments/live` scaffolding
 - GitHub Actions OIDC connection to Azure, proven end-to-end with a trivial `terraform plan` check in CI
@@ -21,11 +21,11 @@ infra/
     live/
 ```
 
-`bootstrap` is deliberately separate from `dev`/`live` — it creates the things those environments *depend on* (remote state storage, the initial Key Vault), so it can't itself use the backend it's creating. See the architecture doc's [Terraform Module Structure](../weather-outfit-advisor-architecture.md#terraform-module-structure) section for the reasoning.
+`bootstrap` is deliberately separate from `dev`/`live` — it creates the things those environments *depend on* (remote state storage, the initial Key Vault), so it can't itself use the backend it's creating. See the architecture doc's [Terraform Module Structure](./weather-outfit-advisor-architecture.md#terraform-module-structure) section for the reasoning.
 
 ## 2. Local tooling
 
-Neither Terraform nor `gh` (GitHub CLI) were installed on the machine; Azure CLI already was, and was already logged in to the intended subscription ("Azure subscription 1", Pay-As-You-Go, matching the [scope doc](../weather-outfit-advisor-v1-scope.md)).
+Neither Terraform nor `gh` (GitHub CLI) were installed on the machine; Azure CLI already was, and was already logged in to the intended subscription ("Azure subscription 1", Pay-As-You-Go, matching the [scope doc](./weather-outfit-advisor-v1-scope.md)).
 
 - **Terraform**: pulled from Homebrew's `homebrew-core` in 2023 after HashiCorp's license changed to BUSL — installed from HashiCorp's own tap instead: `brew tap hashicorp/tap && brew install hashicorp/tap/terraform`. Landed on v1.15.8, satisfying `required_version = ">= 1.9"`.
 - **GitHub CLI**: plain `brew install gh`, needed later for setting repo variables and triggering/inspecting workflow runs without leaving the terminal.
@@ -35,7 +35,7 @@ Neither Terraform nor `gh` (GitHub CLI) were installed on the machine; Azure CLI
 
 Creates, in `rg-woa-bootstrap`:
 - A storage account (`stwoatfstatec9gjz3`, name is `st${short_name}tfstate${random_suffix}` — storage account names must be globally unique, hence the random suffix) + a `tfstate` blob container, versioning enabled, `prevent_destroy` set (losing this takes out state for the whole project).
-- A Key Vault (`kv-woa-boot-c9gjz3`) — RBAC-authorized, purge protection on, 90-day soft-delete retention set **explicitly** rather than left to provider defaults, per the [threat model doc](../weather-outfit-advisor-threat-model.md#1-key-vault--managed-identity-trust-boundary)'s call to confirm this in Terraform rather than assume it.
+- A Key Vault (`kv-woa-boot-c9gjz3`) — RBAC-authorized, purge protection on, 90-day soft-delete retention set **explicitly** rather than left to provider defaults, per the [threat model doc](./weather-outfit-advisor-threat-model.md#1-key-vault--managed-identity-trust-boundary)'s call to confirm this in Terraform rather than assume it.
 - A `Key Vault Administrator` role assignment for the operator's own user (via `data.azurerm_client_config.current.object_id`), since no Managed Identity exists yet to hold vault access — that comes in Milestone 2's `secrets` module.
 
 `bootstrap` itself uses `backend "local"` — it can't point at the remote state store it's the one creating.
@@ -55,7 +55,7 @@ Built in `bootstrap`:
 - `azuread_application_federated_identity_credential` — the trust relationship. Scoped to one specific repo and branch, not a wildcard, per the threat model's OIDC federation mitigation.
 - `azurerm_role_assignment` × 2 — `Contributor` on `rg-woa-dev` and `rg-woa-live` only.
 
-Workflow file: [`.github/workflows/terraform-plan.yml`](../../.github/workflows/terraform-plan.yml) — triggers on `push` to `main` (path-filtered to `infra/**`) and `workflow_dispatch`. **Deliberately no `pull_request` trigger** — a fork PR must never be able to run a workflow that authenticates to Azure, per the threat model's second mitigation under OIDC federation. Runs `terraform plan` only; `apply` was never wired into CI.
+Workflow file: [`.github/workflows/terraform-plan.yml`](../.github/workflows/terraform-plan.yml) — triggers on `push` to `main` (path-filtered to `infra/**`) and `workflow_dispatch`. **Deliberately no `pull_request` trigger** — a fork PR must never be able to run a workflow that authenticates to Azure, per the threat model's second mitigation under OIDC federation. Runs `terraform plan` only; `apply` was never wired into CI.
 
 Repo variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) set via `gh variable set` — **variables, not secrets**, since none of these are sensitive in isolation; they're only useful paired with a valid federated token from this exact repo's own Actions runs.
 

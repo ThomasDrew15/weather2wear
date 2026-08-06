@@ -12,7 +12,9 @@ Milestone 0 (due diligence) and Milestone 1 (Infra Bootstrap) are complete — s
 @docs/weather-outfit-advisor-data-model.md
 @docs/weather-outfit-advisor-api-contracts.md
 @docs/weather-outfit-advisor-threat-model.md
-@docs/engineering-log/README.md
+@README.md
+@docs/milestone-0-due-diligence.md
+@docs/milestone-1-infra-bootstrap.md
 
 ## Stack (short version — see architecture doc for full reasoning)
 - TypeScript throughout
