@@ -75,6 +75,18 @@ Apply complete! Resources: 10 added, 0 changed, 0 destroyed.
 
 Two Cosmos DB accounts (serverless, pay-per-request), two Key Vaults, two Managed Identities, a handful of role assignments. Role assignments and identities are free; serverless Cosmos and Key Vault operations are billed per-request at a scale (near-zero request volume pre-launch) that rounds to effectively £0/month, consistent with the reasoning in the [architecture doc's Data Layer](./weather-outfit-advisor-architecture.md#data-layer-lightweight-accounts--preferences--locations) and [Milestone 1's cost note](./milestone-1-infra-bootstrap.md#cost).
 
+## 7. Post-review fix: operator role assignments coupled to the caller, not a stable identity
+
+GitHub Copilot's PR review flagged that `operator_kv_secrets_officer` (this milestone) and `bootstrap_operator` (Milestone 1) both bind `principal_id` to `data.azurerm_client_config.current.object_id` — a live lookup of whoever is currently authenticated, not a stored value. `principal_id` is `ForceNew` on `azurerm_role_assignment`, so a different identity running `terraform apply` (a different machine, a teammate, a CI-driven apply) would silently replace the assignment, revoking the previous operator's access as a side effect of an unrelated run.
+
+**Fix:** added an `azuread_group.operators` (plus `azuread_group_member` for the current operator) to `bootstrap`, and repointed all four affected role assignments — bootstrap's Key Vault Administrator, bootstrap's two tfstate storage account roles, and both environments' Key Vault Secrets Officer — at the group's object ID instead. Membership is now a separate concern from the resources that depend on it; adding or removing an operator is a group-membership change, not an infrastructure change.
+
+Two things worth recording because they were real, not hypothetical:
+- **`azuread_group` creation failed mid-apply** on `bootstrap` with `dial tcp [ipv6-addr]:443: connect: no route to host` reaching Microsoft Graph's beta endpoint — a transient network issue, not a config error. Landed in a genuinely bad intermediate state: the old individual-principal role assignments had already been destroyed (they're replaced *before* the new group exists, since Terraform can't know the group's future ID ahead of creating it) while the new ones weren't yet created, meaning the operator briefly had zero access to bootstrap's vault and the tfstate storage account. A plain retry picked up cleanly from state and finished correctly. Worth knowing this ordering risk exists before running this kind of change against anything with less tolerance for a few minutes of degraded access.
+- **RBAC propagation delay, for real this time** (previously only a documented possibility): after bootstrap's apply, `dev`'s `terraform plan` failed twice with `403 AuthorizationPermissionMismatch` against the tfstate storage account before succeeding on retry, a minute or so later. Same category of issue as Milestone 1's §5.5/5.6, just triggered by a role assignment being *replaced* rather than newly granted.
+
+Verified post-fix via `az ad group member list` and `az role assignment list` against all three vaults directly, not inferred from `plan` output.
+
 ## Carried into Milestone 3
 
 - `module.data` and `module.secrets` outputs (`cosmos_account_endpoint`, `identity_id`, `identity_client_id`, `key_vault_uri`, etc.) are what `backend-compute` will consume to wire the Function App's identity block and app settings.

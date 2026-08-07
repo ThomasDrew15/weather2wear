@@ -47,3 +47,8 @@ output "github_actions_client_id" {
   description = "Client ID of the GitHub Actions OIDC app registration. Set as the AZURE_CLIENT_ID repo variable in GitHub."
   value       = azuread_application_registration.github_actions.client_id
 }
+
+output "operator_group_object_id" {
+  description = "Object ID of the operators AAD group. Bootstrap uses local state, so this can't be read via remote state — copy it into environments/*/main.tf's secrets module wiring by hand after apply."
+  value       = azuread_group.operators.object_id
+}

@@ -37,3 +37,8 @@ variable "cosmos_database_name" {
   description = "Name of the Cosmos SQL database (from the data module)."
   type        = string
 }
+
+variable "operator_group_object_id" {
+  description = "Object ID of the operators AAD group (bootstrap's operator_group_object_id output). Role assignments target this group, not the currently authenticated caller, so a different identity running terraform apply doesn't silently replace them."
+  type        = string
+}

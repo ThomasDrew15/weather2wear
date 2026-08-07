@@ -31,14 +31,19 @@ resource "azurerm_key_vault" "this" {
   }
 }
 
-# Lets the operator running `terraform apply` (via az login) write the
-# secret value below. Narrower than bootstrap's "Key Vault Administrator" —
-# this vault only ever needs secret read/write, no access-policy/purge
-# management, so Secrets Officer is the correct least-privilege fit.
+# Lets the operator group (bootstrap's azuread_group.operators) write secret
+# values via `az keyvault secret set`. Narrower than bootstrap's "Key Vault
+# Administrator" — this vault only ever needs secret read/write, no
+# access-policy/purge management, so Secrets Officer is the correct
+# least-privilege fit. Targets the group, not
+# data.azurerm_client_config.current.object_id directly — principal_id is
+# ForceNew on this resource, so binding to "whoever is currently
+# authenticated" would replace this assignment every time a different
+# identity ran `terraform apply`.
 resource "azurerm_role_assignment" "operator_kv_secrets_officer" {
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets Officer"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = var.operator_group_object_id
 }
 
 # Created once, referenced by backend-compute in Milestone 3 — persists

@@ -11,6 +11,12 @@ locals {
 
   resource_group_name = "rg-woa-dev"
   location            = "uksouth"
+
+  # From bootstrap's operator_group_object_id output. Bootstrap uses local
+  # state, so this can't be read via remote state — copied by hand after
+  # `terraform apply` in infra/bootstrap, same pattern as backend.tf's
+  # storage account name.
+  operator_group_object_id = "d4f3df6b-70b2-4710-9617-38fa66e74080"
 }
 
 module "data" {
@@ -35,4 +41,6 @@ module "secrets" {
   cosmos_account_id    = module.data.cosmos_account_id
   cosmos_account_name  = module.data.cosmos_account_name
   cosmos_database_name = module.data.cosmos_database_name
+
+  operator_group_object_id = local.operator_group_object_id
 }

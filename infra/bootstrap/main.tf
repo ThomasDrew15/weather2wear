@@ -75,27 +75,46 @@ resource "azurerm_key_vault" "bootstrap" {
   }
 }
 
-# Grants the operator running `terraform apply` (via az login) management
-# access so secrets can be seeded before the Managed Identity exists.
+# Operator role assignments target this group's object ID, not
+# data.azurerm_client_config.current.object_id directly. principal_id is
+# ForceNew on azurerm_role_assignment, so binding straight to "whoever is
+# currently authenticated" means a different machine/identity running
+# `terraform apply` would silently replace these assignments — revoking the
+# previous operator's access as a side effect of an unrelated apply, rather
+# than a deliberate decision. The group is a stable target; membership is
+# managed separately from the resources that depend on it.
+resource "azuread_group" "operators" {
+  display_name     = "${var.project_short_name}-operators"
+  security_enabled = true
+  description      = "Operators permitted to manage secrets/state for ${var.project_name}. Role assignments target this group instead of individual principals."
+}
+
+resource "azuread_group_member" "current_operator" {
+  group_object_id  = azuread_group.operators.object_id
+  member_object_id = data.azurerm_client_config.current.object_id
+}
+
+# Grants the operator group management access so secrets can be seeded
+# before the Managed Identity exists.
 resource "azurerm_role_assignment" "bootstrap_operator" {
   scope                = azurerm_key_vault.bootstrap.id
   role_definition_name = "Key Vault Administrator"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = azuread_group.operators.object_id
 }
 
 # Same reasoning as the github_actions_tfstate_* assignments below: local
 # `terraform init`/`plan`/`apply` in dev/live now uses use_azuread_auth too,
-# so the local operator needs the same two roles on the storage account.
+# so the operator group needs the same two roles on the storage account.
 resource "azurerm_role_assignment" "bootstrap_operator_tfstate_reader" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Reader"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = azuread_group.operators.object_id
 }
 
 resource "azurerm_role_assignment" "bootstrap_operator_tfstate_blob_contributor" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Storage Blob Data Contributor"
-  principal_id         = data.azurerm_client_config.current.object_id
+  principal_id         = azuread_group.operators.object_id
 }
 
 # --- dev/live resource group containers -----------------------------------
