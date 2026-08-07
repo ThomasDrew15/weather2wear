@@ -3,7 +3,7 @@
 From-scratch rebuild of a dissertation project: a web app that recommends clothing based on weather. New stack, new infra — not an iteration on old code.
 
 ## Current status
-Milestone 0 (due diligence) and Milestone 1 (Infra Bootstrap) are complete — see the engineering log for what was actually built and what went wrong along the way. Starting Milestone 2 (Data & Secrets).
+Milestones 0–2 (due diligence, Infra Bootstrap, Data & Secrets) are complete — see the engineering log for what was actually built and what went wrong along the way. Starting Milestone 3 (Backend Compute Core).
 
 ## Full context (read these for detail — don't ask the user to re-explain)
 @docs/weather-outfit-advisor-v1-scope.md
@@ -15,6 +15,7 @@ Milestone 0 (due diligence) and Milestone 1 (Infra Bootstrap) are complete — s
 @README.md
 @docs/milestone-0-due-diligence.md
 @docs/milestone-1-infra-bootstrap.md
+@docs/milestone-2-data-secrets.md
 
 ## Stack (short version — see architecture doc for full reasoning)
 - TypeScript throughout
@@ -27,6 +28,7 @@ Milestone 0 (due diligence) and Milestone 1 (Infra Bootstrap) are complete — s
 - Keep backend logic framework-agnostic — plain HTTP handlers thinly wrapped for Azure Functions, not Functions-specific code baked into business logic (this is what makes the later AKS migration cheap)
 - Terraform: separate modules per layer (`bootstrap`, `frontend`, `backend-compute`, `data`, `secrets`, `observability`), separate `environments/dev` and `environments/live` root modules — not Terraform Workspaces
 - Secrets: Azure Key Vault, **user-assigned** Managed Identity (not system-assigned — see architecture doc's Secrets Management section for why)
+- Terraform manages the Key Vault and its access — **never** a secret's value. `azurerm_key_vault_secret` resources are not used; values are seeded via `az keyvault secret set` out-of-band, so real credentials never land in Terraform state (see architecture doc's "How secret values get into Key Vault")
 - Never put real credentials in `.env` files — local auth goes via `az login`
 - All Cosmos DB documents need a `schemaVersion` field
 - API responses follow the shared error envelope in the API contracts doc — don't invent new error shapes

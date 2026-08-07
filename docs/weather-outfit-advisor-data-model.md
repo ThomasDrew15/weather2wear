@@ -69,9 +69,7 @@ Kept as a separate container from `users` because tokens have a fundamentally di
 
 ---
 
-## Open items
-- Whether `locations` needs a max-count guard (unlikely to matter at "a few favourites" scale, but worth a sanity limit in validation)
-
 ## Resolved Decisions Log
 - **Magic-link email delivery:** Azure Communication Services (Email) — see architecture doc's "Notifications" section for reasoning
 - **Local development against this data layer:** Cosmos DB emulator locally, rather than real dev-environment Cosmos DB — see architecture doc's "Local Development Workflow" section
+- **`locations` max-count guard:** capped at 10 per user. Cheap defense-in-depth (the whole `users` document is read on every point-read, so an unbounded array is a way to inflate RU cost on every future read of one's own document), not a UX constraint — the scope doc's "a few favourites" framing means 10 is generous headroom, not a realistic ceiling. Enforced in application-layer validation when the `users` container's write path is built (Milestone 3+), same as the threat model's dropdown-allowlisting pattern.

@@ -80,6 +80,17 @@ The Azure-native secret store. Integrates directly with Terraform (`azurerm_key_
 
 **Decision: user-assigned Managed Identity**, defined in the `secrets` module rather than tied to `backend-compute`'s lifecycle. This is what makes the cost-management approach below actually low-admin: destroying and recreating `backend-compute` never touches permissions, because the identity granted access to Key Vault and Cosmos DB isn't the thing being destroyed.
 
+### How secret values get into Key Vault
+
+A separate question from *where* secrets live: how does the actual value (Met Office key, Azure OpenAI key, etc.) get set in the first place?
+
+| Approach | Pros | Cons |
+|---|---|---|
+| **Terraform manages the value** (`azurerm_key_vault_secret` with `value` sourced from a TF variable) | Fully declarative — the secret's existence and value are both defined in code | Terraform tracks every managed resource's attributes in state to detect drift, so the real value gets written into Terraform state as a side effect — turning the state file itself into sensitive material, whether or not that was the intent |
+| **Terraform manages the vault only; value seeded via `az keyvault secret set`** | Terraform never reads or writes the value, so it's never in state — the value exists in exactly one place (Key Vault) | The secret's value isn't tracked as code; seeding is a manual one-time step per environment, documented rather than declared |
+
+**Decision: Terraform manages the vault, role assignments, and access — never the secret value.** Discovered mid-Milestone-2 after Terraform-managing the Met Office key's value put it into `dev`'s remote state; the fix was removing the `azurerm_key_vault_secret` resource entirely and seeding via `az keyvault secret set` instead, then `terraform state rm` to drop the value from state going forward. Applies to every secret from here on, including Milestone 4's Azure OpenAI key.
+
 ### The bootstrap problem
 
 Terraform itself needs credentials to create the Key Vault in the first place, and Terraform state needs a remote backend (Azure Storage) with its own access control. This is normally solved with a small "bootstrap" step/module that sits slightly outside the main IaC lifecycle (creates the state storage account and initial Key Vault) — to be designed deliberately as part of the Terraform module structure work, not discovered by accident mid-build.
