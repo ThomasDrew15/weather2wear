@@ -44,6 +44,12 @@ resource "azurerm_role_assignment" "operator_kv_secrets_officer" {
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets Officer"
   principal_id         = var.operator_group_object_id
+
+  # principal_id is ForceNew; create_before_destroy grants the new principal
+  # before revoking the old one, instead of a gap with neither in place.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Created once, referenced by backend-compute in Milestone 3 — persists
@@ -63,6 +69,10 @@ resource "azurerm_role_assignment" "app_kv_secrets_user" {
   scope                = azurerm_key_vault.this.id
   role_definition_name = "Key Vault Secrets User"
   principal_id         = azurerm_user_assigned_identity.app.principal_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Cosmos DB SQL role assignment (data-plane RBAC), not azurerm_role_assignment
@@ -76,6 +86,10 @@ resource "azurerm_cosmosdb_sql_role_assignment" "app_data_contributor" {
   role_definition_id  = "${var.cosmos_account_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_user_assigned_identity.app.principal_id
   scope               = "${var.cosmos_account_id}/dbs/${var.cosmos_database_name}"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Secret values are deliberately NOT managed here. If Terraform wrote the

@@ -94,12 +94,22 @@ resource "azuread_group_member" "current_operator" {
   member_object_id = data.azurerm_client_config.current.object_id
 }
 
+# create_before_destroy on every role assignment below: principal_id is
+# ForceNew, so a replacement would otherwise revoke access, then grant it —
+# a real gap in between, hit for real in Milestone 2 (see engineering log
+# §7). create_before_destroy flips the order to grant, then revoke, so
+# there's never a moment with neither in place.
+
 # Grants the operator group management access so secrets can be seeded
 # before the Managed Identity exists.
 resource "azurerm_role_assignment" "bootstrap_operator" {
   scope                = azurerm_key_vault.bootstrap.id
   role_definition_name = "Key Vault Administrator"
   principal_id         = azuread_group.operators.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Same reasoning as the github_actions_tfstate_* assignments below: local
@@ -109,12 +119,20 @@ resource "azurerm_role_assignment" "bootstrap_operator_tfstate_reader" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Reader"
   principal_id         = azuread_group.operators.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "azurerm_role_assignment" "bootstrap_operator_tfstate_blob_contributor" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azuread_group.operators.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # --- dev/live resource group containers -----------------------------------
@@ -167,12 +185,20 @@ resource "azurerm_role_assignment" "github_actions_dev" {
   scope                = azurerm_resource_group.dev.id
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "azurerm_role_assignment" "github_actions_live" {
   scope                = azurerm_resource_group.live.id
   role_definition_name = "Contributor"
   principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # The azurerm backend also needs to read/write the tfstate storage account
@@ -184,10 +210,18 @@ resource "azurerm_role_assignment" "github_actions_tfstate_reader" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Reader"
   principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "azurerm_role_assignment" "github_actions_tfstate_blob_contributor" {
   scope                = azurerm_storage_account.tfstate.id
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
