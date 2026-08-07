@@ -7,6 +7,8 @@
 - `secrets` module (Key Vault + role assignments)
 - Managed Identity wiring, provable in isolation before any app code depends on it
 
+Commits: `48a2107`, `91033fe`, `b2fdce4`, merged via [PR #11](https://github.com/ThomasDrew15/weather2wear/pull/11).
+
 ---
 
 ## 1. `data` module
@@ -86,6 +88,14 @@ Two things worth recording because they were real, not hypothetical:
 - **RBAC propagation delay, for real this time** (previously only a documented possibility): after bootstrap's apply, `dev`'s `terraform plan` failed twice with `403 AuthorizationPermissionMismatch` against the tfstate storage account before succeeding on retry, a minute or so later. Same category of issue as Milestone 1's §5.5/5.6, just triggered by a role assignment being *replaced* rather than newly granted.
 
 Verified post-fix via `az ad group member list` and `az role assignment list` against all three vaults directly, not inferred from `plan` output.
+
+## 8. Post-review fix: close the replacement gap itself, not just the coupling
+
+A second Copilot pass on the same PR pointed out that §7's fix doesn't fully close the risk it's aimed at: `principal_id` is `ForceNew` on `azurerm_role_assignment` regardless of *what* it's bound to, so any future principal change, group-based or not, would still destroy the old assignment before creating the new one. §7 made the binding stable; it didn't make a *future* change to that binding safe.
+
+**Fix:** `lifecycle { create_before_destroy = true }` on every role assignment in the repo — all seven in `bootstrap`, all three in `secrets` (including the Cosmos SQL one, a different resource type with the same `ForceNew` behaviour) — not just the four Copilot flagged. The reasoning for going beyond what was asked: `create_before_destroy` is a lifecycle instruction, not a tracked attribute, so adding it costs nothing and produces no plan diff on its own. Confirmed exactly that: `terraform plan` showed zero changes across `bootstrap`, `dev`, and `live` after adding it everywhere.
+
+This is the same class of fix as §7, one level deeper — §7 fixed *who* a role assignment points at; §8 fixes *how* Terraform transitions between principals when that pointer ever changes again, closing the exact gap the outage in §7 actually happened in.
 
 ## Carried into Milestone 3
 
