@@ -24,6 +24,7 @@ What was actually built, why, and what went wrong along the way — one entry pe
 - [Milestone 2 — Data & Secrets](docs/milestone-2-data-secrets.md)
 - Milestone 3 — Backend Compute Core *(not started)*
 - Milestone 4 — AI Advisor *(not started)*
-- Milestone 5 — Frontend *(not started)*
-- Milestone 6 — Observability & Polish *(not started)*
-- Milestone 7 — AKS + KEDA Migration *(later phase, not started)*
+- Milestone 5 — Accounts Backend *(not started)*
+- Milestone 6 — Frontend *(not started)*
+- Milestone 7 — Observability & Polish *(not started)*
+- Milestone 8 — AKS + KEDA Migration *(later phase, not started)*
