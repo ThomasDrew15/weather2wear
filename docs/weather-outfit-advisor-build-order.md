@@ -53,6 +53,7 @@ Due diligence is front-loaded as its own milestone before any code is written, g
 - Azure OpenAI-backed Function
 - Dropdowns-only inputs per scope doc
 - Structured prompt per the contract defined in Milestone 0
+- Azure OpenAI account + model deployment added to the `data` module (not `backend-compute` — see architecture doc's Backend Compute section for why), API key seeded into the existing per-environment Key Vault following the Met Office key's pattern exactly
 
 ## Milestone 5 — Accounts Backend
 - Magic-link request/verify Functions (Azure Communication Services email delivery)

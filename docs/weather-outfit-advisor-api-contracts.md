@@ -135,5 +135,5 @@ Fixed five-field structure (Top/Bottom/Footwear/Outerwear/Accessories) — delib
 
 ## Open items
 - Exact Met Office DataHub response shape needs mapping to `periods[]` once the API is integrated — field names above are illustrative pending that mapping
-- Whether `accessories`/`outerwear` should be nullable (e.g. no outerwear needed in warm weather) rather than always populated — to confirm once prompt design starts in Milestone 4
+- ~~Whether `accessories`/`outerwear` should be nullable~~ — resolved pregaming Milestone 4: kept always populated (matches the dissertation-tested fixed five-field format), the prompt instructs the model to say something like "Not needed" rather than omit a field
 - This doc doesn't yet cover Milestone 5 (Accounts Backend) — magic-link request/verify and profile CRUD (preferences + locations) need their own request/response contracts, designed when that milestone starts rather than assumed now. The Milestone 3 Cosmos smoke-test is deliberately excluded from this doc entirely — it's internal infra verification, not a public contract.
