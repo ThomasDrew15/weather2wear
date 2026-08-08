@@ -18,6 +18,15 @@ on:
       - "backend/**"
   workflow_dispatch: {}
 
+# Overlapping pushes must queue, not run concurrently — two simultaneous
+# `terraform apply`s against the same dev state would race. cancel-in-progress
+# is deliberately false: cancelling a run mid-apply is the actually dangerous
+# option (a partial apply), unlike e.g. a test workflow where cancelling a
+# stale run is safe and saves CI minutes.
+concurrency:
+  group: backend-deploy-dev
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: read

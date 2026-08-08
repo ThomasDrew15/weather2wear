@@ -22,7 +22,11 @@ export type HandlerResult<T> = { status: number; body: T | ReturnType<typeof mak
 export async function handleWeatherFetch(rawBody: unknown, deps: WeatherFetchDeps): Promise<HandlerResult<WeatherFetchResponse>> {
   const parsed = weatherFetchRequestBodySchema.safeParse(rawBody);
   if (!parsed.success) {
-    return makeError("INVALID_REQUEST", parsed.error.message);
+    // zod's own .message is a verbose, internal-shaped string (its exact
+    // form isn't a stable contract across zod versions) — log the detail
+    // server-side, return a fixed message to the caller.
+    console.error("weatherFetch request validation failed", parsed.error.issues);
+    return makeError("INVALID_REQUEST", "Request body failed validation.");
   }
   const { location: locationInput, range } = parsed.data;
 
@@ -56,7 +60,7 @@ export async function handleWeatherFetch(rawBody: unknown, deps: WeatherFetchDep
   const now = deps.now();
   const todayIsoDate = now.toISOString().slice(0, 10);
 
-  let periods;
+  let periods: WeatherFetchResponse["periods"];
   try {
     periods = mapToForecastPeriods(parsedForecast.data, range, todayIsoDate);
   } catch (err) {
