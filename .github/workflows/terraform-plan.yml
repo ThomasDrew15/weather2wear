@@ -26,6 +26,14 @@ jobs:
     strategy:
       matrix:
         environment: [dev, live]
+    # Shared with backend-deploy.yml's "terraform-dev" group (concurrency
+    # groups are repo-wide, not scoped to one workflow file) — both
+    # workflows can trigger on the same push and touch the same dev state;
+    # this queues them instead of racing for the state lock. Keyed by
+    # environment so a live leg is never needlessly serialized against
+    # unrelated dev work.
+    concurrency:
+      group: terraform-${{ matrix.environment }}
     defaults:
       run:
         working-directory: infra/environments/${{ matrix.environment }}

@@ -18,13 +18,18 @@ on:
       - "backend/**"
   workflow_dispatch: {}
 
-# Overlapping pushes must queue, not run concurrently — two simultaneous
-# `terraform apply`s against the same dev state would race. cancel-in-progress
-# is deliberately false: cancelling a run mid-apply is the actually dangerous
-# option (a partial apply), unlike e.g. a test workflow where cancelling a
-# stale run is safe and saves CI minutes.
+# Same group name as terraform-plan.yml's dev leg ("terraform-${{ matrix.environment }}"
+# there) — concurrency groups are repo-wide, not scoped to one workflow
+# file, so this queues against that workflow too, not just against itself.
+# Both workflows trigger on the same push and touch the same dev state;
+# without a shared group they raced for the state lock (observed directly:
+# the PR #22 merge's first deploy run failed with "state blob is already
+# locked" against terraform-plan's concurrently-running dev leg).
+# cancel-in-progress is deliberately false: cancelling a run mid-apply is
+# the actually dangerous option (a partial apply), unlike e.g. a test
+# workflow where cancelling a stale run is safe and saves CI minutes.
 concurrency:
-  group: backend-deploy-dev
+  group: terraform-dev
   cancel-in-progress: false
 
 permissions:
