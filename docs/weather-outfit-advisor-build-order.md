@@ -47,21 +47,27 @@ Due diligence is front-loaded as its own milestone before any code is written, g
 - `backend-compute` module
 - Weather-fetch Function against Met Office DataHub, built to the API contract from Milestone 0
 - No AI yet — real weather data flowing end-to-end first
+- A disposable, internal-only Cosmos smoke-test (create/read/delete against the `users` container, function-key-protected, not part of the public API contract) — proves the Managed Identity's Cosmos RBAC path end-to-end, discharging the verification Milestone 2 deferred until `backend-compute` existed
 
 ## Milestone 4 — AI Advisor
 - Azure OpenAI-backed Function
 - Dropdowns-only inputs per scope doc
 - Structured prompt per the contract defined in Milestone 0
 
-## Milestone 5 — Frontend
+## Milestone 5 — Accounts Backend
+- Magic-link request/verify Functions (Azure Communication Services email delivery)
+- User profile CRUD (preferences + locations, including the `locations` max-count guard from the data model doc)
+- Its own request/response contract, designed before it's built — the existing API contracts doc only ever covered weather-fetch and AI-advisor; this milestone needs the same treatment, not code written ad hoc against an undocumented shape
+
+## Milestone 6 — Frontend
 - `frontend` module (Static Web App)
 - Wired to both Functions
 - Lightweight accounts UI
 
-## Milestone 6 — Observability & Polish
+## Milestone 7 — Observability & Polish
 - OpenTelemetry instrumentation → Azure Monitor
 - Dashboards/alerts
 - README and portfolio write-up
 
-## Milestone 7 — AKS + KEDA Migration (later phase, separate effort)
+## Milestone 8 — AKS + KEDA Migration (later phase, separate effort)
 - As scoped in the architecture doc: re-platform `frontend` and `backend-compute`, KEDA HTTP scale-to-zero, Collector export switched to Prometheus/Grafana

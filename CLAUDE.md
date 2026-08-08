@@ -35,6 +35,6 @@ Milestones 0–2 (due diligence, Infra Bootstrap, Data & Secrets) are complete �
 - Follow the API contracts doc exactly for request/response shapes on the weather-fetch and AI-advisor Functions
 
 ## What NOT to do
-- Don't add AKS/Kubernetes resources yet — that's Milestone 7, a separate later effort
+- Don't add AKS/Kubernetes resources yet — that's Milestone 8, a separate later effort
 - Don't add a free-text input field to the AI advisor — explicitly deferred to v2
 - Don't build a full password/OAuth auth system — v1 is magic-link only

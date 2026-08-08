@@ -105,6 +105,8 @@ Different in kind from 5.5 — not a missing permission so much as a missing *se
 ### 5.7 — Open item: `push` trigger never fired
 The workflow is configured to trigger on `push` to `main` with `infra/**` changes, and did register correctly (`gh workflow list` showed it `active`) — but across three separate pushes touching `infra/**`, zero runs were created via the `push` event (confirmed via `gh api .../actions/runs?event=push` returning `total_count: 0`). `workflow_dispatch` (manual trigger) worked immediately and reliably every time, which is what was used to actually prove the OIDC chain end-to-end (§6). Root cause not identified — Actions is confirmed enabled for the repo (`allowed_actions: "all"`), the workflow YAML is valid (workflow runs fine when dispatched), and there's no obvious permissions gap. **Left as an open item** rather than chased further, since it didn't block the milestone's actual deliverable (an end-to-end-proven `terraform plan` in CI) and further diagnosis would have needed broader `gh` OAuth scopes not yet granted. Worth revisiting before relying on push-triggered CI in Milestone 2+.
 
+**Correction, added while pregaming Milestone 3 (2026-08-08):** re-examining the run history turned up a `push`-triggered run at 2026-08-06T23:06:45Z (commit `140bfa1`) — it failed, but with §5.6's `listKeys` `403`, at a commit predating that fix, nothing to do with triggering. The very next `push`-triggered run at 23:11:24Z (commit `3df6f10`, the fix applied) succeeded. A third `push`-triggered run succeeded on 2026-08-07 at the actual PR #11 merge commit. So `push` was, in fact, working — the "zero runs" finding above looks like it was checked before those runs registered (or before the later, correctly-triggering pushes happened) and never re-checked afterward. No workaround was needed; this was a documentation gap, not an infrastructure one.
+
 ## 6. Final verification
 
 ```
@@ -124,4 +126,4 @@ Everything created this milestone (2 resource groups, 1 storage account, 1 conta
 
 - `dev_resource_group_name` / `live_resource_group_name` outputs from `bootstrap` are what the `data`/`secrets` modules will deploy into.
 - The `use_azuread_auth` TODO is now resolved; the next related follow-up is setting `shared_access_key_enabled = false` on the storage account once nothing anywhere still needs key-based auth.
-- §5.7 (push trigger) is still open.
+- §5.7 (push trigger) — see the 2026-08-08 correction inline: `push` was actually working, the original "zero runs" finding didn't hold up under later evidence.

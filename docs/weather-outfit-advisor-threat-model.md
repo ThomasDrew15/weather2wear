@@ -45,11 +45,12 @@ A lightweight, boundary-by-boundary review rather than a full enterprise STRIDE 
 
 ## 4. External dependency failure / edge cases
 
-**Assets:** application availability and correctness when Met Office DataHub or Azure OpenAI misbehave.
+**Assets:** application availability and correctness when Met Office DataHub, Azure OpenAI, or postcodes.io misbehave.
 
 | Threat / scenario | Mitigation |
 |---|---|
 | Met Office DataHub unavailable or rate-limited (360 calls/day free tier) | Already has a dedicated `UPSTREAM_UNAVAILABLE` error code in the API contract. Add OTel-based monitoring of daily call volume so dev/CI traffic doesn't silently eat into the same quota as production. |
+| postcodes.io unavailable or a postcode genuinely doesn't resolve (added Milestone 3, not part of the original design pass) | weather-fetch's postcode path depends on this third-party lookup before Met Office DataHub can even be called. A non-match returns `LOCATION_NOT_FOUND`; a request failure returns `UPSTREAM_UNAVAILABLE` — same pattern as the other two upstreams, not a bespoke error path. Unauthenticated, so no credential to leak, but it is a single point of failure for the entire postcode-search feature with no fallback provider. Accepted for v1 given the free/no-setup tradeoff already used elsewhere in this stack; revisit if postcode search availability becomes a real user complaint. |
 | Azure OpenAI unavailable, or returns malformed/unexpected content | Already has `UPSTREAM_UNEXPECTED_RESPONSE` in the contract. The AI-advisor handler should validate the model's output against the expected five-field shape before returning it — never pass a malformed AI response straight through to the frontend. |
 | Either upstream changes its response shape over time (schema drift) | Parse upstream responses defensively (schema validation at the boundary, e.g. zod in TypeScript) rather than trusting the shape implicitly — fail with `UPSTREAM_UNEXPECTED_RESPONSE` rather than crashing or passing bad data downstream. |
 | Prompt injection via structured fields | Low risk in v1 since inputs are dropdown-constrained, not free text — but dropdown values still get interpolated into the AI prompt. Validate/allowlist the exact set of accepted values server-side (don't trust the frontend to only ever send valid options) as cheap defense in depth. Becomes a much bigger concern in v2 once free text is added — already flagged in scope doc as needing dedicated hardening at that point. |
