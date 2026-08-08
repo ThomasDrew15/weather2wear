@@ -38,6 +38,6 @@ A from-scratch rebuild of the original dissertation project (a web app that reco
 ## Resolved Decisions Log
 - **Azure vs AWS:** Azure — free AKS control plane vs. EKS's flat hourly charge, plus alignment with existing Az-104/Az-305 certs and current job market demand
 - **Azure subscription:** standard personal Pay-As-You-Go, no dedicated business setup
-- **AI provider:** Azure OpenAI Service direct, GPT-4o-mini/GPT-5-nano
+- **AI provider:** Azure OpenAI Service direct, GPT-4o-mini/GPT-5-nano. **Addendum, pregaming Milestone 4 (2026-08-08):** this subscription's Azure OpenAI quota sits on the auto-assigned "Free Tier" (confirmed via `az cognitiveservices usage list` — `gpt-4o-mini` GlobalStandard is 0/0 quota), with an automatic upgrade to Tier 1 scheduled for 2026-08-12 (no business-justification form). Rather than wait, the deployment name is a config value, not hardcoded: start with `gpt-4.1-mini` (200 RPM/200k TPM available now on Free Tier, same non-reasoning chat-completions family as gpt-4o-mini) to prove the AI-advisor pipeline end-to-end, then swap to gpt-4o-mini once Tier 1 unlocks. No API contract change either way — `modelUsed` in the response already just echoes whatever's actually deployed.
 - **Concrete architecture, Terraform module structure, monitoring tooling:** all resolved — see the architecture doc
 - **Multiple saved locations:** in scope for v1 (not deferred) — the lightweight-accounts data model already supports a `locations` array per user
