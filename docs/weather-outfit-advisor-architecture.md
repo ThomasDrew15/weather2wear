@@ -31,6 +31,8 @@ Rather than building on AKS from day one, the plan is to ship a working v1 on si
 
 **Decision: Azure Functions for v1.** Migrate to AKS + KEDA in the later phase (see below).
 
+**Milestone 4 addition:** the AI-advisor Function itself lives in `backend-compute` alongside weather-fetch (same Function App, new route), but the Azure OpenAI account/model deployment it calls does not — see the `data` module bullet under Terraform Module Structure for why.
+
 ### What is KEDA?
 
 KEDA (Kubernetes Event-Driven Autoscaling) is an open-source component that extends Kubernetes' native autoscaling so pods can scale to **zero**, not just between a minimum of 1 and some maximum (which is the limit of the built-in Horizontal Pod Autoscaler). It watches a trigger source — HTTP traffic, queue length, a cron schedule — and spins pods up only when needed, scaling back to zero after a cooldown.
@@ -123,7 +125,7 @@ Module boundaries follow directly from the decisions above — each one wraps a 
 - **`bootstrap`** — Terraform state storage account + container, and the initial Key Vault. Solves the chicken-and-egg problem (Terraform needs credentials/state storage before it can create everything else). Applied once, separately from routine dev/live deploys.
 - **`frontend`** — Static Web App for v1, swapped for AKS ingress + deployment in the later phase. Nothing else depends on which is inside.
 - **`backend-compute`** — Function App + plan for v1, swapped for AKS deployment + KEDA `ScaledObject` later. The module the phased-migration plan is built around protecting.
-- **`data`** — Cosmos DB account, database, containers (serverless). Unchanged across both phases.
+- **`data`** — Cosmos DB account, database, containers (serverless); also the Azure OpenAI (Cognitive Services) account and model deployment used by the AI-advisor Function (added in Milestone 4). Unchanged across both phases. The OpenAI resource lives here rather than in `backend-compute` for the same reason the Managed Identity lives in `secrets` rather than `backend-compute`: `backend-compute` is destroyed and recreated routinely for cost management (see Cost Management below), and a model deployment is exactly the kind of slow-to-reprovision, quota-scarce resource that must survive that teardown.
 - **`secrets`** — Key Vault (post-bootstrap), the user-assigned Managed Identity, and its role assignments. Referenced by `backend-compute`, but persists independently of it.
 - **`observability`** — Log Analytics workspace + Application Insights for v1; same module later points the OTel Collector at Prometheus/Grafana instead.
 
