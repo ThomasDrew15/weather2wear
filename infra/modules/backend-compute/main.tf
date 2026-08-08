@@ -40,10 +40,11 @@ resource "azurerm_role_assignment" "app_storage_blob_data_owner" {
 
 # Consumption plan (Y1) — scales to zero, matching the "near-zero cost when
 # idle" reasoning for Functions over AKS in v1 (see architecture doc). Plan
-# type and Node runtime version below were current as of this module's
-# authoring (2026-08) — Azure periodically changes what's recommended here,
-# so verify against `az functionapp list-runtimes` or current docs before
-# applying if this sits unapplied for a while.
+# type and Node runtime version below were confirmed live via
+# `az functionapp list-runtimes --os linux` on 2026-08-08 (node 18/20/22/24
+# all currently supported) — re-check the same way before applying if this
+# sits unapplied for a while, since Azure periodically changes what's
+# recommended/supported here.
 resource "azurerm_service_plan" "this" {
   name                = "plan-${var.project_short_name}-${var.environment}"
   resource_group_name = var.resource_group_name
@@ -74,8 +75,12 @@ resource "azurerm_linux_function_app" "this" {
   site_config {
     minimum_tls_version = "1.2"
 
+    # Node 20 hit end-of-life 2026-04 (per the official Node.js release
+    # schedule) — not just a stale default, a real reason to avoid it.
+    # Node 22 is the current minimum LTS both Azure Functions and the
+    # @azure/* SDK packages (their engines field now requires >=22) support.
     application_stack {
-      node_version = "20"
+      node_version = "22"
     }
   }
 
