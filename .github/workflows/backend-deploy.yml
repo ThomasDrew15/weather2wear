@@ -1,0 +1,117 @@
+name: Backend Deploy (dev)
+
+# dev only, auto-applied on every push to main — live stays a manual
+# `terraform apply` + deploy, per the cost-management doc's manual-teardown
+# philosophy (don't auto-touch production infra/quota on every merge).
+#
+# Push-triggered, same as terraform-plan.yml — Milestone 1 §5.7 found that
+# push never actually fired the plan workflow in testing (root cause never
+# identified). This workflow may hit the same issue. If pushes to main don't
+# trigger a run here, use `gh workflow run "Backend Deploy (dev)"`
+# (workflow_dispatch) as the interim manual fallback, exactly as Milestone 1
+# did to prove the OIDC chain end-to-end.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - "backend/**"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  ARM_USE_OIDC: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: terraform apply (dev)
+        working-directory: infra/environments/dev
+        run: |
+          terraform init
+          terraform apply -auto-approve
+
+      - name: Capture Function App name
+        id: tf-outputs
+        working-directory: infra/environments/dev
+        run: echo "function_app_name=$(terraform output -raw function_app_name)" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and build backend
+        working-directory: backend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ steps.tf-outputs.outputs.function_app_name }}
+          package: backend
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
+
+      - name: Post-deploy Cosmos smoke-test
+        working-directory: infra/environments/dev
+        run: |
+          set -euo pipefail
+          APP_NAME="${{ steps.tf-outputs.outputs.function_app_name }}"
+          RG_NAME=$(terraform output -raw resource_group_name)
+
+          FUNC_KEY=""
+          for attempt in 1 2 3 4 5; do
+            FUNC_KEY=$(az functionapp function keys list \
+              --resource-group "$RG_NAME" \
+              --name "$APP_NAME" \
+              --function-name cosmosSmokeTest \
+              --query default -o tsv 2>/dev/null || true)
+            if [ -n "$FUNC_KEY" ]; then break; fi
+            echo "Function key not ready yet, retrying in 15s ($attempt/5)..."
+            sleep 15
+          done
+          if [ -z "$FUNC_KEY" ]; then
+            echo "::error::Could not retrieve the cosmosSmokeTest function key after 5 attempts."
+            exit 1
+          fi
+
+          HOSTNAME=$(az functionapp show --resource-group "$RG_NAME" --name "$APP_NAME" --query defaultHostName -o tsv)
+
+          RESPONSE=""
+          for attempt in 1 2 3 4 5; do
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+              -H "x-functions-key: $FUNC_KEY" \
+              "https://${HOSTNAME}/api/internal/cosmos-smoke-test" || true)
+            STATUS=$(echo "$RESPONSE" | tail -n1)
+            if [ "$STATUS" = "200" ]; then break; fi
+            echo "Smoke-test not passing yet (status $STATUS), retrying in 15s ($attempt/5)..."
+            sleep 15
+          done
+
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          echo "Smoke-test response: $BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Cosmos smoke-test failed after deploy — Managed Identity's Cosmos RBAC path is not working."
+            exit 1
+          fi
