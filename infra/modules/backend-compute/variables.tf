@@ -47,3 +47,13 @@ variable "cosmos_account_endpoint" {
   description = "Data-plane endpoint of the Cosmos DB account (from the data module) — app setting for the Cosmos SDK client."
   type        = string
 }
+
+variable "ci_principal_id" {
+  description = "Object ID of the GitHub Actions CI service principal (from bootstrap's github_actions_client_id output, resolved to its service principal object ID — bootstrap uses local state so this is copied by hand, same pattern as operator_group_object_id). Needs data-plane roles on this module's storage account because the azurerm provider's own apply-time calls (e.g. reading queue properties) run as whoever executes terraform apply, not as the Function App's Managed Identity."
+  type        = string
+}
+
+variable "operator_group_object_id" {
+  description = "Object ID of the operators AAD group (bootstrap's operator_group_object_id output) — same data-plane need as ci_principal_id, but for a human operator running terraform apply locally."
+  type        = string
+}

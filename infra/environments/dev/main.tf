@@ -17,6 +17,12 @@ locals {
   # `terraform apply` in infra/bootstrap, same pattern as backend.tf's
   # storage account name.
   operator_group_object_id = "d4f3df6b-70b2-4710-9617-38fa66e74080"
+
+  # Object ID of the GitHub Actions CI service principal (bootstrap's
+  # github_actions_client_id output, resolved to its service principal
+  # object ID via `az ad sp show` — same "copied by hand, bootstrap uses
+  # local state" pattern as operator_group_object_id above).
+  ci_principal_id = "9f50e509-8487-47c8-bd13-96fa2f5e8687"
 }
 
 module "data" {
@@ -59,4 +65,7 @@ module "backend_compute" {
   identity_principal_id   = module.secrets.identity_principal_id
   key_vault_uri           = module.secrets.key_vault_uri
   cosmos_account_endpoint = module.data.cosmos_account_endpoint
+
+  ci_principal_id          = local.ci_principal_id
+  operator_group_object_id = local.operator_group_object_id
 }

@@ -38,6 +38,38 @@ resource "azurerm_role_assignment" "app_storage_blob_data_owner" {
   }
 }
 
+# Separate from the app identity's grant above — this is for whoever runs
+# `terraform apply` itself (CI, or a local operator), not the deployed app.
+# With storage_use_azuread = true on the provider (required because this
+# storage account also has shared_access_key_enabled = false), Terraform's
+# own apply-time calls against the storage account — e.g. reading queue
+# properties as part of managing the resource — authenticate as AAD too,
+# and generic Contributor doesn't include Storage data-plane actions.
+# Function App storage uses blob, queue, and table internally, so all
+# three data roles are granted rather than only the one specific service
+# whichever error happened to surface first.
+locals {
+  storage_data_plane_principals = [var.ci_principal_id, var.operator_group_object_id]
+  storage_data_plane_roles      = ["Storage Blob Data Contributor", "Storage Queue Data Contributor", "Storage Table Data Contributor"]
+
+  storage_data_plane_grants = {
+    for pair in setproduct(local.storage_data_plane_principals, local.storage_data_plane_roles) :
+    "${pair[0]}-${replace(pair[1], " ", "")}" => { principal_id = pair[0], role = pair[1] }
+  }
+}
+
+resource "azurerm_role_assignment" "function_storage_data_plane" {
+  for_each = local.storage_data_plane_grants
+
+  scope                = azurerm_storage_account.function.id
+  role_definition_name = each.value.role
+  principal_id         = each.value.principal_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 # Consumption plan (Y1) — scales to zero, matching the "near-zero cost when
 # idle" reasoning for Functions over AKS in v1 (see architecture doc). Plan
 # type and Node runtime version below were confirmed live via
