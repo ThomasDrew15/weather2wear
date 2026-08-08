@@ -4,12 +4,12 @@ name: Backend Deploy (dev)
 # `terraform apply` + deploy, per the cost-management doc's manual-teardown
 # philosophy (don't auto-touch production infra/quota on every merge).
 #
-# Push-triggered, same as terraform-plan.yml — Milestone 1 §5.7 found that
-# push never actually fired the plan workflow in testing (root cause never
-# identified). This workflow may hit the same issue. If pushes to main don't
-# trigger a run here, use `gh workflow run "Backend Deploy (dev)"`
-# (workflow_dispatch) as the interim manual fallback, exactly as Milestone 1
-# did to prove the OIDC chain end-to-end.
+# Push-triggered, same as terraform-plan.yml. Milestone 1 §5.7 originally
+# reported push never firing, but re-examining the run history during
+# Milestone 3 found real push-triggered successes, including the actual
+# PR #11 merge commit — see the 2026-08-08 correction in
+# milestone-1-infra-bootstrap.md. `gh workflow run "Backend Deploy (dev)"`
+# (workflow_dispatch) remains available as a manual fallback regardless.
 on:
   push:
     branches: [main]
