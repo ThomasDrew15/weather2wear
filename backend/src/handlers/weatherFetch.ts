@@ -51,7 +51,11 @@ export async function handleWeatherFetch(rawBody: unknown, deps: WeatherFetchDep
     return makeError("UPSTREAM_UNEXPECTED_RESPONSE", "Met Office DataHub returned an unrecognised response shape.");
   }
 
-  const todayIsoDate = deps.now().toISOString().slice(0, 10);
+  // Captured once — using deps.now() separately for todayIsoDate and
+  // generatedAt could disagree across a day boundary.
+  const now = deps.now();
+  const todayIsoDate = now.toISOString().slice(0, 10);
+
   let periods;
   try {
     periods = mapToForecastPeriods(parsedForecast.data, range, todayIsoDate);
@@ -64,7 +68,7 @@ export async function handleWeatherFetch(rawBody: unknown, deps: WeatherFetchDep
 
   const responseBody: WeatherFetchResponse = {
     location,
-    generatedAt: deps.now().toISOString(),
+    generatedAt: now.toISOString(),
     periods,
   };
 
