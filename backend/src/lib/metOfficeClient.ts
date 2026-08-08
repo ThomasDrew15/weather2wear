@@ -2,6 +2,10 @@ import { getMetOfficeApiKey } from "./secrets";
 
 const DEFAULT_BASE_URL = "https://data.hub.api.metoffice.gov.uk/sitespecific/v0";
 
+// Without a timeout, a stalled upstream connection ties up the invocation
+// until the Functions host's own timeout — costly on Consumption.
+const REQUEST_TIMEOUT_MS = 15_000;
+
 // Only the daily forecast endpoint is used for v1 (see the v1 scope doc:
 // today/tomorrow baseline, multi-day only if straightforward — the daily
 // endpoint alone covers "today" through "multiDay" via periods[] slicing).
@@ -19,6 +23,7 @@ export async function fetchMetOfficeDailyForecast(lat: number, lon: number): Pro
       apikey: apiKey,
       accept: "application/json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {

@@ -15,9 +15,13 @@ export type ResolvedLocation = {
   lon: number;
 };
 
+// Without a timeout, a stalled upstream connection ties up the invocation
+// until the Functions host's own timeout — costly on Consumption.
+const REQUEST_TIMEOUT_MS = 10_000;
+
 export async function resolvePostcode(postcode: string): Promise<ResolvedLocation> {
   const url = `https://api.postcodes.io/postcodes/${encodeURIComponent(postcode.trim())}`;
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
 
   if (response.status === 404) {
     throw new PostcodeNotFoundError(`No location found for postcode "${postcode}"`);
