@@ -124,9 +124,29 @@ resource "azurerm_linux_function_app" "this" {
     # could plausibly be attached to a host.
     AZURE_CLIENT_ID = var.identity_client_id
 
+    # storage_uses_managed_identity alone isn't enough with a *user*-assigned
+    # identity: the Functions host defaults to looking for a system-assigned
+    # one and fails to authenticate to its own runtime storage. These name the
+    # identity explicitly. Without them the deploy itself succeeds but the
+    # sync-trigger step fails ("Function app may have malformed content"),
+    # because the host can't read its own package back out of storage.
+    AzureWebJobsStorage__clientId   = var.identity_client_id
+    AzureWebJobsStorage__credential = "managedidentity"
+
+    # Same problem for the deployment package specifically — the Linux
+    # Consumption RBAC deploy path (WEBSITE_RUN_FROM_PACKAGE) needs the
+    # identity named by resource ID, not just client ID.
+    WEBSITE_RUN_FROM_PACKAGE_BLOB_MI_RESOURCE_ID = var.identity_id
+
     KEY_VAULT_URI           = var.key_vault_uri
     COSMOS_ACCOUNT_ENDPOINT = var.cosmos_account_endpoint
   }
+
+  # Defaults to "SystemAssigned", which doesn't exist on this app — any future
+  # Key Vault reference would silently fail to resolve. Not currently used
+  # (secrets are read via the SDK at runtime, not Key Vault references), but
+  # wrong-by-default is worth correcting while the identity wiring is fresh.
+  key_vault_reference_identity_id = var.identity_id
 
   tags = var.tags
 
