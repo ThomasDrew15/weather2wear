@@ -225,3 +225,35 @@ resource "azurerm_role_assignment" "github_actions_tfstate_blob_contributor" {
     create_before_destroy = true
   }
 }
+
+# Contributor deliberately excludes Microsoft.Authorization/roleAssignments/write
+# — an intentional Azure design boundary preventing privilege escalation via
+# Contributor. Discovered as a genuine 403 on the first real CI-driven
+# terraform apply this project has ever run (Milestone 1 wired plan-only
+# CI; every apply before Milestone 3's backend-deploy workflow was run by a
+# human operator, whose own account already had sufficient rights, so this
+# gap was never exercised until backend-compute's Terraform started
+# creating role assignments of its own). "Role Based Access Control
+# Administrator" is the narrower, current built-in role for exactly this —
+# manages role assignments only, not the broader legacy "User Access
+# Administrator". Same scope as the existing Contributor grants, not
+# subscription-wide.
+resource "azurerm_role_assignment" "github_actions_dev_rbac_admin" {
+  scope                = azurerm_resource_group.dev.id
+  role_definition_name = "Role Based Access Control Administrator"
+  principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "azurerm_role_assignment" "github_actions_live_rbac_admin" {
+  scope                = azurerm_resource_group.live.id
+  role_definition_name = "Role Based Access Control Administrator"
+  principal_id         = azuread_service_principal.github_actions.object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
