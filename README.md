@@ -2,7 +2,7 @@
 
 A from-scratch rebuild of a dissertation project: a web app that recommends clothing based on weather. New stack, new infra, DevOps-first approach — not an iteration on the old codebase.
 
-**Status:** Milestones 0–2 (due diligence, infra bootstrap, data & secrets) are complete. Milestone 3 (backend compute core) is built and merged, currently blocked on an Azure subscription quota increase before it can be applied for real — see the engineering log. See the [build order doc](docs/weather-outfit-advisor-build-order.md) for the full milestone plan.
+**Status:** Milestones 0–3 are complete. The weather-fetch Function is deployed to `dev` and serving real Met Office forecast data. Milestone 4 (AI advisor) is next. See the [build order doc](docs/weather-outfit-advisor-build-order.md) for the full milestone plan.
 
 ## Docs
 
@@ -22,7 +22,7 @@ What was actually built, why, and what went wrong along the way — one entry pe
 - [Milestone 0 — Due Diligence](docs/milestone-0-due-diligence.md)
 - [Milestone 1 — Infra Bootstrap](docs/milestone-1-infra-bootstrap.md)
 - [Milestone 2 — Data & Secrets](docs/milestone-2-data-secrets.md)
-- [Milestone 3 — Backend Compute Core](docs/milestone-3-backend-compute-core.md) *(open — blocked on an Azure quota increase)*
+- [Milestone 3 — Backend Compute Core](docs/milestone-3-backend-compute-core.md)
 - Milestone 4 — AI Advisor *(not started)*
 - Milestone 5 — Accounts Backend *(not started)*
 - Milestone 6 — Frontend *(not started)*
