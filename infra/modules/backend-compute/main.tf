@@ -107,6 +107,14 @@ resource "azurerm_linux_function_app" "this" {
   site_config {
     minimum_tls_version = "1.2"
 
+    # Hard ceiling on how far this app can ever scale out. Not a per-caller
+    # rate limit (that's the AI-advisor's own Cosmos-backed limiter) but a
+    # global blast-radius cap: it bounds worst-case spend and worst-case
+    # upstream call volume — against both Azure OpenAI's TPM quota and the Met
+    # Office free tier's 360 calls/day — no matter what traffic arrives.
+    # Consumption scales to zero regardless, so this costs nothing when idle.
+    app_scale_limit = var.function_app_scale_limit
+
     # Node 20 hit end-of-life 2026-04 (per the official Node.js release
     # schedule) — not just a stale default, a real reason to avoid it.
     # Node 22 is the current minimum LTS both Azure Functions and the
@@ -140,6 +148,14 @@ resource "azurerm_linux_function_app" "this" {
 
     KEY_VAULT_URI           = var.key_vault_uri
     COSMOS_ACCOUNT_ENDPOINT = var.cosmos_account_endpoint
+
+    # Azure OpenAI (Milestone 4). Endpoint and deployment name only — there is
+    # no key setting here because the account has local_auth_enabled = false;
+    # the app authenticates with AZURE_CLIENT_ID's identity above. The
+    # deployment name is config rather than a code constant so the model can be
+    # swapped without a code change.
+    AZURE_OPENAI_ENDPOINT   = var.openai_endpoint
+    AZURE_OPENAI_DEPLOYMENT = var.openai_deployment_name
   }
 
   # Defaults to "SystemAssigned", which doesn't exist on this app — any future
@@ -149,6 +165,21 @@ resource "azurerm_linux_function_app" "this" {
   key_vault_reference_identity_id = var.identity_id
 
   tags = var.tags
+
+  # Carried forward from Milestone 3: the deploy action (Azure/functions-action)
+  # sets these two app settings itself, and they're absent from the config
+  # above, so every `terraform apply` stripped them and every deploy re-added
+  # them. Harmless given the workflow's ordering (apply runs before deploy) but
+  # it made every plan noisier than it should be, and plan noise is how real
+  # changes get skimmed past. Scoped to these two keys specifically rather than
+  # ignoring app_settings wholesale — a blanket ignore would also silently drop
+  # genuine changes to the settings above.
+  lifecycle {
+    ignore_changes = [
+      app_settings["WEBSITE_RUN_FROM_PACKAGE"],
+      app_settings["WEBSITE_ENABLE_SYNC_UPDATE_SITE"],
+    ]
+  }
 
   # Managed-identity storage access must exist before the Function App tries
   # to use it.

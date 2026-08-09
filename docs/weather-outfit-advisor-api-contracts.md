@@ -23,6 +23,7 @@ Used by both Functions on any non-2xx response.
 |---|---|---|
 | `INVALID_REQUEST` | Request body failed validation (missing/malformed fields) | No |
 | `LOCATION_NOT_FOUND` | Postcode/coordinates didn't resolve to a known location | No |
+| `RATE_LIMITED` | Caller exceeded the per-caller request limit (HTTP 429) | Yes |
 | `UPSTREAM_UNAVAILABLE` | Met Office DataHub or Azure OpenAI unreachable or erroring | Yes |
 | `UPSTREAM_UNEXPECTED_RESPONSE` | Upstream responded but in a shape we couldn't parse | Yes |
 | `INTERNAL_ERROR` | Unhandled failure in our own code | No |
@@ -104,9 +105,11 @@ Used by both Functions on any non-2xx response.
 }
 ```
 
-- `forecast` — a single period from the weather-fetch response (frontend selects which day)
+- `forecast` — a single period from the weather-fetch response (frontend selects which day). A `date` field is accepted and ignored, so a frontend can forward a whole weather-fetch period unchanged.
+- `forecast.summary` — **must be one of the summary strings weather-fetch itself produces** (the Met Office significant-weather vocabulary: `"Sunny"`, `"Light rain"`, `"Heavy snow showers"`, and so on, plus `"Weather summary unavailable"`). Not free text. Added in Milestone 4: it's the only advisor input that isn't dropdown-selected and it is interpolated into the model prompt, so accepting arbitrary strings here would be a free-text prompt-injection path in a v1 that is specified to have none. See the threat model's prompt-injection row.
 - `activityType`: `"formal"` | `"informal"` | `"sport"` — dropdown-selected, per v1 scope
-- `preferences` — an open object for dropdown-selected preferences. `coldTolerance` is the only field defined for v1; more preference fields can be added here without a contract version bump, since it's additive.
+- `preferences` — an open object for dropdown-selected preferences. `coldTolerance` is the only field defined for v1; more preference fields can be added here without a contract version bump, since it's additive. **Convention for later additions:** new preference fields land *optional*, with the handler supplying the default, so the object never has to accept unknown keys to stay backward-compatible.
+- `preferences.coldTolerance`: `"low"` | `"medium"` | `"high"` — how well the user copes with cold (`low` feels the cold easily and needs more insulation). **Added Milestone 4:** this doc previously gave `"medium"` as an example without ever stating the permitted set, which left the threat model's "allowlist the exact set of accepted values server-side" mitigation impossible to implement against a defined list. Found while verifying Milestone 4's assumptions against the docs rather than during implementation.
 
 **v2 forward-compatibility note:** the deferred free-text context box will add an optional `context: string` field to this request. Because it's new and optional, v1-shaped requests keep working unchanged — the prompt-injection/content-safety hardening that field requires can be scoped and built entirely within the AI-advisor handler, without touching this contract's existing fields.
 
@@ -126,10 +129,15 @@ Used by both Functions on any non-2xx response.
 }
 ```
 
-Fixed five-field structure (Top/Bottom/Footwear/Outerwear/Accessories) — deliberately mirrors the format from the original dissertation project, which tested well with stakeholders. `modelUsed` is included for observability/debugging (ties into the OTel instrumentation), not shown to the end user.
+Fixed five-field structure (Top/Bottom/Footwear/Outerwear/Accessories) — deliberately mirrors the format from the original dissertation project, which tested well with stakeholders. `modelUsed` is included for observability/debugging (ties into the OTel instrumentation), not shown to the end user. It reports the model that actually served the request (echoed from the upstream response), not the configured deployment name, so it stays honest if a deployment is ever swapped underneath.
+
+### Rate limiting
+Added Milestone 4. This endpoint costs money per call, so it is rate-limited per caller: **10 requests per 60-second fixed window**, keyed on the caller's IP address, returning `RATE_LIMITED` (HTTP 429) once exceeded. The limit is checked before request validation and before any upstream call, so a caller over the limit costs nothing to reject.
+
+The limiter fails **open**: if its backing store is unavailable, requests are allowed and the failure is logged. A rate limiter that takes the endpoint down when its own storage breaks converts a cost control into an outage. The Function App's scale limit and the Azure OpenAI deployment's TPM cap still bound the blast radius underneath it.
 
 ### Errors
-`INVALID_REQUEST`, `UPSTREAM_UNAVAILABLE`, `UPSTREAM_UNEXPECTED_RESPONSE`, `INTERNAL_ERROR`
+`INVALID_REQUEST`, `RATE_LIMITED`, `UPSTREAM_UNAVAILABLE`, `UPSTREAM_UNEXPECTED_RESPONSE`, `INTERNAL_ERROR`
 
 ---
 

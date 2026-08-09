@@ -57,3 +57,19 @@ variable "operator_group_object_id" {
   description = "Object ID of the operators AAD group (bootstrap's operator_group_object_id output) — same data-plane need as ci_principal_id, but for a human operator running terraform apply locally."
   type        = string
 }
+
+variable "openai_endpoint" {
+  description = "Data-plane endpoint of the Azure OpenAI account (from the data module) — app setting for the AI-advisor Function. No matching key setting exists: the account has local_auth_enabled = false and is reached via the Managed Identity."
+  type        = string
+}
+
+variable "openai_deployment_name" {
+  description = "Name of the Azure OpenAI model deployment (from the data module) — app setting rather than a code constant, so the model can be swapped without a code change."
+  type        = string
+}
+
+variable "function_app_scale_limit" {
+  description = "Maximum number of instances this Function App may scale out to. A global blast-radius cap on spend and upstream call volume, distinct from the AI-advisor's per-caller rate limit. Low by design: this project's traffic is a portfolio demo, and Consumption still scales to zero when idle."
+  type        = number
+  default     = 3
+}

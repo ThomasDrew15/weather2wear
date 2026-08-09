@@ -100,3 +100,44 @@ resource "azurerm_cosmosdb_sql_role_assignment" "app_data_contributor" {
 # <value>` after this vault exists, so Terraform only ever manages the vault
 # container and access, never the value itself. See engineering log for
 # Milestone 2.
+
+# --- Azure OpenAI access (Milestone 4) --------------------------------------
+#
+# The app's data-plane access to Azure OpenAI, granted to the same
+# user-assigned identity that already reaches Key Vault and Cosmos. Lives here
+# rather than in backend-compute so it survives that module's teardown, exactly
+# like the Cosmos SQL role assignment above.
+#
+# "Cognitive Services OpenAI User" is the read/infer role — it includes
+# .../deployments/chat/completions/action (the only data action this app
+# actually performs) and excludes creating or modifying deployments, which is
+# Terraform's job, not the app's. Verified against the live role definition
+# (`az role definition list --name "Cognitive Services OpenAI User"`) rather
+# than picked by name.
+resource "azurerm_role_assignment" "app_openai_user" {
+  scope                = var.openai_account_id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = azurerm_user_assigned_identity.app.principal_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# The direct cost of choosing identity auth over an API key: with a key, a
+# local operator holding Contributor could simply read it. With
+# local_auth_enabled = false there is no key to read, so local development
+# (which per the architecture doc's Local Development Workflow calls the *real*
+# Azure OpenAI — no emulator exists) needs the same data-plane role granted
+# explicitly. Granted to the operators group, not to whoever last ran
+# `terraform apply`, for the ForceNew reason documented on the Key Vault
+# assignment above.
+resource "azurerm_role_assignment" "operator_openai_user" {
+  scope                = var.openai_account_id
+  role_definition_name = "Cognitive Services OpenAI User"
+  principal_id         = var.operator_group_object_id
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}

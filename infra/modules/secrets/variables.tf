@@ -42,3 +42,8 @@ variable "operator_group_object_id" {
   description = "Object ID of the operators AAD group (bootstrap's operator_group_object_id output). Role assignments target this group, not the currently authenticated caller, so a different identity running terraform apply doesn't silently replace them."
   type        = string
 }
+
+variable "openai_account_id" {
+  description = "Resource ID of the Azure OpenAI account (from the data module) — scope for the app identity's and operator group's Cognitive Services OpenAI User role assignments."
+  type        = string
+}
