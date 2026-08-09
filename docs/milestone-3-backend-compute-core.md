@@ -8,9 +8,11 @@
 - No AI yet — real weather data flowing end-to-end first
 - A disposable, internal-only Cosmos smoke-test (create/read/delete against the `users` container, function-key-protected, not part of the public API contract) — proves the Managed Identity's Cosmos RBAC path end-to-end, discharging the verification Milestone 2 deferred until `backend-compute` existed
 
-**Status: open, blocked on a real human support ticket with Microsoft.** Everything buildable without touching real Azure compute is done, reviewed, and merged. The one thing not yet proven is a real `terraform apply` succeeding in `dev` — see §6, which has been a longer and more informative saga than the milestone's actual code.
+**Status: complete.** Weather-fetch is deployed and serving real Met Office data in `dev`, and the Cosmos smoke-test passes in CI — see §8.
 
-PRs: [#22](https://github.com/ThomasDrew15/weather2wear/pull/22) (the milestone itself), [#23](https://github.com/ThomasDrew15/weather2wear/pull/23) (a same-day CI fix, see §5), [#38](https://github.com/ThomasDrew15/weather2wear/pull/38) (storage account RBAC fix, see §6). Commits: `12bf06f`, `c16e27e`, `85cd648`, `323870f`, `93973dd`, `2db4781`, `5230cb3`, `425b446`, `1c2e61a`, `aee403b`, `35878b2`.
+Writing the code took a fraction of the time that getting it deployed did. Five separate blockers stood between "`terraform validate` passes" and "a real HTTP request returns real weather": an Azure subscription quota wall (§6), a tainted resource that couldn't self-heal (§7.1), a CI permissions gap that had never been exercised before (§7.2), a managed-identity mismatch in the deploy path (§7.3), and a CI concurrency flaw that silently ran stale code (§7). None were bugs in the milestone's actual application logic.
+
+PRs: [#22](https://github.com/ThomasDrew15/weather2wear/pull/22) (the milestone itself), [#23](https://github.com/ThomasDrew15/weather2wear/pull/23) (state-lock race, §5), [#38](https://github.com/ThomasDrew15/weather2wear/pull/38) (storage account RBAC, §6), [#39](https://github.com/ThomasDrew15/weather2wear/pull/39) (log update), [#40](https://github.com/ThomasDrew15/weather2wear/pull/40) (CI role-assignment permissions, §7.2), [#41](https://github.com/ThomasDrew15/weather2wear/pull/41) (user-assigned identity in the deploy path, §7.3).
 
 ---
 
@@ -85,16 +87,61 @@ That brief pass-through left real cleanup behind, independent of the quota quest
 
 With the automated path confirmed exhausted, a proper support ticket was filed through the Portal's **"Technical"** issue type instead of the quota wizard, specifically to reach a human reviewer rather than the same automated pipeline. Worth recording as new information: a Free support plan, which blocked ticket *creation* via the API entirely, did **not** block this Portal-based technical ticket — that uncertainty is now resolved. The ticket references the specific failed automated request (ID, error code, exact quota numbers) so a human reviewer has concrete detail to act on rather than a vague description. Verified as real via the API rather than taken on faith: `az support in-subscription tickets list` shows ticket `06bfd9d3-c51897a3-f847545c-9c6e-4d7c-9349-3641eb6eebe3` (customer-facing Support request ID `2608080050000537`), status `Open`, filed 2026-08-08T22:42:49Z, with Microsoft's automated acknowledgment already logged via `az support in-subscription communication list`.
 
-**Status at time of writing: a real, human-reviewed support ticket is open, awaiting Microsoft's response.** This is the one item blocking the milestone from closing — and unlike the first attempt, there's now a queryable, verifiable ticket behind it rather than an automated request that fails silently.
+**Resolved 2026-08-09.** Microsoft actioned the ticket and the quota was granted. The next `backend-deploy.yml` run created the App Service Plan successfully (`Creation complete after 14s`) — the first time this project has ever provisioned Azure compute.
+
+## 7. Three more failures after the quota cleared
+
+The quota was the longest blocker, not the last one. Three further problems surfaced in sequence, each only reachable once the previous one was fixed — the same "one gap fixed, next one surfaces" pattern Milestone 1 hit with storage permissions (§5.5 → §5.6).
+
+**7.1 — The tainted storage account couldn't self-heal.** §6's tainted resource produced `"already exists - to be managed via Terraform this resource needs to be imported"`. The plan symbol was `+/-` (create replacement, *then* destroy), Terraform's default safety behaviour — but this storage account's name comes from a `random_string` generated once and never regenerated, so a create-before-destroy replacement is structurally impossible: Terraform tried to create a second resource with the identical name while the tainted one still held it, and Azure correctly refused. Since PR #38 had already fixed the *cause* of the taint, the resource itself was fine and just needed to be told so: `terraform untaint`, pure state metadata, nothing touched in Azure. Fresh plan immediately went clean (`8 to add, 0 to change, 0 to destroy`).
+
+**7.2 — CI couldn't create role assignments.** Next run got much further and failed with seven near-identical `403 AuthorizationFailed ... Microsoft.Authorization/roleAssignments/write` errors. Not a propagation delay, a structural gap: `Contributor` deliberately excludes role-assignment writes, an intentional Azure boundary against privilege escalation. This had never been exercised before because **this was the first CI-driven `terraform apply` in the project's history** — Milestone 1 wired plan-only CI, and every apply before this one was run by a human operator whose account already had sufficient rights. Fixed by granting the CI service principal `Role Based Access Control Administrator` (the narrower current built-in role, not the broader legacy `User Access Administrator`) scoped to `rg-woa-dev`/`rg-woa-live`, matching its existing `Contributor` scope. Applied to `bootstrap` directly, since that layer is human-applied by convention (PR #40).
+
+**7.3 — The deploy couldn't read its own package.** `terraform apply` then succeeded completely for the first time — all 11 `backend-compute` resources created — and the *code deploy* failed: `Sync Trigger Functionapp : Failed to perform sync trigger on function app. Function app may have malformed content.` The deploy log gave it away: `Package Url will use RBAC with System-assigned managed identity`. This app deliberately uses a **user**-assigned identity (Milestone 2's decision, so permissions survive `backend-compute` teardowns), and `storage_uses_managed_identity = true` doesn't name *which* identity — so the Functions host looked for a system-assigned one, found none, and couldn't read its own deployment package back out of storage. Confirmed via `az functionapp show` rather than inferred. Fixed (PR #41) by naming the identity explicitly in three places: `AzureWebJobsStorage__clientId`, `AzureWebJobsStorage__credential`, and `WEBSITE_RUN_FROM_PACKAGE_BLOB_MI_RESOURCE_ID` (the Linux Consumption RBAC deploy path needs the resource ID, not the client ID). Also set `key_vault_reference_identity_id`, which was silently defaulting to `SystemAssigned` — an identity this app doesn't have. Not currently load-bearing since secrets are read via the SDK rather than Key Vault references, but wrong-by-default and cheap to correct.
+
+**A concurrency-group flaw, found in passing.** PRs #40 and #41 merged 15 seconds apart, and the resulting deploy ran *stale code*: GitHub permits only one **pending** run per concurrency group, so the newer Backend Deploy (carrying PR #41's fix) was cancelled while the older one (without it) kept running — the opposite of the desired behaviour. Caught by checking each run's `headSha` against `main` rather than assuming the latest run had the latest code. Worked around by letting the stale run finish (deliberately *not* cancelling a `terraform apply` mid-flight — exactly the partial-apply risk `cancel-in-progress: false` exists to prevent) and dispatching a fresh run on the correct commit. The underlying flaw is a real trade-off of sharing one group across two workflows, unanticipated when §5 introduced it, and is carried forward as an open item rather than patched in a hurry.
+
+## 8. Final verification
+
+```
+$ gh run view 31330786497   # Backend Deploy (dev)
+✓ main Backend Deploy (dev) · deploy in 2m43s
+
+Smoke-test response: {"pass":true}
+```
+
+The smoke-test passing against real Azure is what genuinely discharges Milestone 2's deferred Managed Identity verification — a real token acquired, real AAD RBAC data-plane access to Cosmos, real create/read/delete round-trip, then cleaned up after itself.
+
+The milestone's actual deliverable, verified directly against the live deployment:
+
+```
+$ curl -X POST https://func-woa-dev.azurewebsites.net/api/weather-fetch \
+    -d '{"location":{"type":"postcode","postcode":"SW1A 1AA"},"range":"todayTomorrow"}'
+
+{"location":{"label":"Westminster","lat":51.50101,"lon":-0.141563},
+ "generatedAt":"2026-08-09T19:10:33.688Z",
+ "periods":[{"date":"2026-08-09","summary":"Sunny","tempMinC":20,"tempMaxC":32,
+             "precipitationChancePercent":1,"windSpeedMph":3},
+            {"date":"2026-08-10","summary":"Cloudy","tempMinC":18,"tempMaxC":27,
+             "precipitationChancePercent":4,"windSpeedMph":5}]}
+```
+
+All four contract paths exercised against the live deployment, not just unit tests: postcode (200, two periods for `todayTomorrow`), coordinates (200), malformed body (400 `INVALID_REQUEST`, with the stable non-zod message from §4's third review round), and an unresolvable postcode (404 `LOCATION_NOT_FOUND`). Error envelope shapes and `retryable` flags match the Milestone 0 contract exactly.
+
+**Status: complete.** Real weather data flowing end to end, no AI, exactly as the build order scoped it.
 
 A related, adjacent finding surfaced while checking whether other upcoming quota walls should be pre-empted: Milestone 4's two candidate models both show `0` TPM quota for the deployment type a live synchronous call would actually use (`OpenAI.GlobalStandard.gpt-4o-mini` and `OpenAI.GlobalStandard.gpt-5-nano`, confirmed via `az cognitiveservices usage list`, distinct from the batch/fine-tune variants of the same models which already have generous quota that isn't relevant to this project's use case). The self-service request path for this one goes through Azure AI Foundry's quota UI rather than the plain Azure OpenAI resource blade, and that flow asks for "company details" and a business justification. Declined for a personal portfolio project rather than misrepresented — left for whenever Milestone 4 actually starts, not blocking anything now. (Milestone 4's own pregame work has since found a pragmatic way around this independently — see that milestone's log once it exists.)
 
 ## Cost
 
-One real resource exists in Azure at time of writing: the runtime storage account (`stwoadevfunciytn8n`, Standard LRS), created during the brief quota pass-through and currently tainted, pending replacement on the next successful apply. Everything else — the Function App, the App Service Plan, the role assignments — has never actually been created; every apply attempt so far has been stopped by one blocker or another before reaching them. The one real resource that exists is billed per-GB at a scale that rounds to effectively £0/month. Once the full module applies cleanly: one Linux Consumption Function App (scales to zero, matching the "near-zero cost when idle" reasoning from the architecture doc) plus this storage account, both consistent with every other milestone's cost note so far.
+Eleven resources now exist in `rg-woa-dev`: one Linux Consumption Function App, its App Service Plan, one Standard LRS storage account, and eight role assignments (free). The Consumption plan scales to zero, matching the "near-zero cost when idle" reasoning from the [architecture doc](./weather-outfit-advisor-architecture.md#backend-compute-ai-advisor--weather-fetching) — with no real traffic, both the plan and the storage account bill per-request/per-GB at a scale that rounds to effectively £0/month, consistent with every other milestone's cost note so far. `live` remains unapplied by design (`backend-deploy.yml` is dev-only), so it costs nothing at all.
 
-## Carried into Milestone 4 (once this closes)
+Worth noting for the [cost-management plan](./weather-outfit-advisor-architecture.md#cost-management-later-phase): this milestone is the first to create anything in the `backend-compute` layer that the targeted-destroy approach is built around. That approach is still untested in practice.
 
-- The Cosmos smoke-test needs to actually pass in CI against real Azure before Milestone 2's Managed Identity verification is genuinely discharged, not just designed to discharge it.
-- Milestone 4's Azure OpenAI TPM quota (§6) is a known, already-diagnosed blocker — Milestone 4's own pregame work found a pragmatic path around it independently (see that milestone's log).
-- `dev`'s `backend-compute` state now has one real, tainted resource in it (the storage account) and nothing else. First fully successful `apply` should be watched closely: it needs to destroy-and-recreate that tainted resource *and* clear the compute quota wall in the same run, genuinely new ground with more moving parts than a typical first apply.
+## Carried into Milestone 4
+
+- **Milestone 2's Managed Identity verification is now genuinely discharged** (§8), not just designed to be. Nothing carried forward on that front.
+- **The CI concurrency-group flaw is a real open item** (§7): two merges landing close together can leave the older, stale-code run executing while the newer one is cancelled. Currently worked around by checking `headSha` before trusting a run. Worth fixing properly — likely by giving each workflow its own group and solving the state-lock contention with `-lock-timeout` instead — but deliberately not rushed in while the deploy was being stabilised.
+- **`terraform apply` now churns two app settings on every run**: `WEBSITE_RUN_FROM_PACKAGE` and `WEBSITE_ENABLE_SYNC_UPDATE_SITE` are set by the deploy action but absent from the Terraform config, so each `apply` strips them and each deploy re-adds them. Harmless given the workflow's ordering (apply runs first), but it makes every plan noisier than it should be. `ignore_changes` on those two keys is the obvious fix.
+- **`live` has never been applied.** Everything verified here is `dev`-only. The first `live` apply will hit the same quota question independently, since quotas are per-subscription-per-region and only `Y1` in UK South was raised — worth checking before assuming it will just work.
+- **Milestone 4's Azure OpenAI TPM quota** (§6) is a known, already-diagnosed blocker; Milestone 4's own pregame work found a pragmatic path around it independently (see that milestone's log).
