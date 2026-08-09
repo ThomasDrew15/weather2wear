@@ -47,6 +47,7 @@ module "secrets" {
   cosmos_account_id    = module.data.cosmos_account_id
   cosmos_account_name  = module.data.cosmos_account_name
   cosmos_database_name = module.data.cosmos_database_name
+  openai_account_id    = module.data.openai_account_id
 
   operator_group_object_id = local.operator_group_object_id
 }
@@ -65,6 +66,8 @@ module "backend_compute" {
   identity_principal_id   = module.secrets.identity_principal_id
   key_vault_uri           = module.secrets.key_vault_uri
   cosmos_account_endpoint = module.data.cosmos_account_endpoint
+  openai_endpoint         = module.data.openai_endpoint
+  openai_deployment_name  = module.data.openai_deployment_name
 
   ci_principal_id          = local.ci_principal_id
   operator_group_object_id = local.operator_group_object_id

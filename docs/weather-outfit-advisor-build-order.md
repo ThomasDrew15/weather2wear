@@ -53,7 +53,7 @@ Due diligence is front-loaded as its own milestone before any code is written, g
 - Azure OpenAI-backed Function
 - Dropdowns-only inputs per scope doc
 - Structured prompt per the contract defined in Milestone 0
-- Azure OpenAI account + model deployment added to the `data` module (not `backend-compute` — see architecture doc's Backend Compute section for why), API key seeded into the existing per-environment Key Vault following the Met Office key's pattern exactly
+- Azure OpenAI account + model deployment added to the `data` module (not `backend-compute` — see architecture doc's Backend Compute section for why), ~~API key seeded into the existing per-environment Key Vault following the Met Office key's pattern exactly~~ — **superseded during Milestone 4 (2026-08-10): no API key at all.** The account is created with `local_auth_enabled = false` and the Function reaches it via the existing user-assigned Managed Identity's `Cognitive Services OpenAI User` role, matching what `data` already does for Cosmos (`local_authentication_enabled = false`) and `backend-compute` for its runtime storage (`shared_access_key_enabled = false`). This line was written in Milestone 0, before both the Milestone 2 state-leak incident and the identity-only convention that followed it; the threat model's "prefer Azure AD/RBAC over master keys — avoids another long-lived secret entirely" already applied. There is no secret to seed for this milestone. Full reasoning, including why the Key Vault approach wouldn't have avoided the state problem anyway, is in the [Milestone 4 log](./milestone-4-ai-advisor.md).
 
 ## Milestone 5 — Accounts Backend
 - Magic-link request/verify Functions (Azure Communication Services email delivery)

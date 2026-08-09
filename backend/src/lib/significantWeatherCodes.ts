@@ -36,7 +36,26 @@ const SIGNIFICANT_WEATHER_SUMMARIES: Record<number, string> = {
   30: "Thunder",
 };
 
+const UNKNOWN_SUMMARY = "Weather summary unavailable";
+
 export function describeSignificantWeatherCode(code: number | undefined): string {
-  if (code === undefined) return "Weather summary unavailable";
-  return SIGNIFICANT_WEATHER_SUMMARIES[code] ?? "Weather summary unavailable";
+  if (code === undefined) return UNKNOWN_SUMMARY;
+  return SIGNIFICANT_WEATHER_SUMMARIES[code] ?? UNKNOWN_SUMMARY;
 }
+
+// Every summary string this system can produce, derived from the table above
+// rather than written out again — the AI-advisor validates its `forecast.summary`
+// input against this set (see schemas/aiAdvisor.ts).
+//
+// Why an allowlist and not just a string: summary is the one advisor input that
+// isn't dropdown-selected, and it is interpolated directly into the model
+// prompt. It reaches us via the client rather than from Met Office directly, so
+// "it came from weather-fetch" is a claim the caller makes, not a fact — which
+// makes it a free-text prompt-injection path in a v1 the scope doc says has no
+// free-text inputs. Constraining it to the vocabulary weather-fetch can
+// actually emit closes that path, and is the "validate/allowlist the exact set
+// of accepted values server-side" mitigation the threat model already asks for.
+export const WEATHER_SUMMARY_VOCABULARY: readonly string[] = [
+  ...new Set(Object.values(SIGNIFICANT_WEATHER_SUMMARIES)),
+  UNKNOWN_SUMMARY,
+];
