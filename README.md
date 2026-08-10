@@ -2,7 +2,7 @@
 
 A from-scratch rebuild of a dissertation project: a web app that recommends clothing based on weather. New stack, new infra, DevOps-first approach — not an iteration on the old codebase.
 
-**Status:** Milestones 0–3 are complete. The weather-fetch Function is deployed to `dev` and serving real Met Office forecast data. Milestone 4 (AI advisor) is next. See the [build order doc](docs/weather-outfit-advisor-build-order.md) for the full milestone plan.
+**Status:** Milestones 0–4 are complete. The weather-fetch and AI-advisor Functions are both deployed to `dev`, serving real Met Office forecast data and real GPT-4.1-mini clothing recommendations. Milestone 5 (accounts backend) is next. See the [build order doc](docs/weather-outfit-advisor-build-order.md) for the full milestone plan.
 
 ## Docs
 
@@ -23,7 +23,7 @@ What was actually built, why, and what went wrong along the way — one entry pe
 - [Milestone 1 — Infra Bootstrap](docs/milestone-1-infra-bootstrap.md)
 - [Milestone 2 — Data & Secrets](docs/milestone-2-data-secrets.md)
 - [Milestone 3 — Backend Compute Core](docs/milestone-3-backend-compute-core.md)
-- Milestone 4 — AI Advisor *(not started)*
+- [Milestone 4 — AI Advisor](docs/milestone-4-ai-advisor.md)
 - Milestone 5 — Accounts Backend *(not started)*
 - Milestone 6 — Frontend *(not started)*
 - Milestone 7 — Observability & Polish *(not started)*
