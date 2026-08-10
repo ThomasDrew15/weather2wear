@@ -24,7 +24,11 @@ app.http("aiAdvisor", {
 
     const result = await handleAiAdvisor(body, {
       checkRateLimit: checkRateLimitOrAllow,
-      rateLimitKey: resolveRateLimitKey(request.headers.get("x-forwarded-for")),
+      rateLimitKey: resolveRateLimitKey({
+        socketIp: request.headers.get("x-azure-socketip"),
+        clientIp: request.headers.get("x-azure-clientip"),
+        forwardedFor: request.headers.get("x-forwarded-for"),
+      }),
       generateRecommendation,
       now: () => new Date(),
     });
