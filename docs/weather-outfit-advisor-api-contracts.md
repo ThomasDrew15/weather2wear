@@ -132,7 +132,14 @@ Used by both Functions on any non-2xx response.
 Fixed five-field structure (Top/Bottom/Footwear/Outerwear/Accessories) — deliberately mirrors the format from the original dissertation project, which tested well with stakeholders. `modelUsed` is included for observability/debugging (ties into the OTel instrumentation), not shown to the end user. It reports the model that actually served the request (echoed from the upstream response), not the configured deployment name, so it stays honest if a deployment is ever swapped underneath.
 
 ### Rate limiting
-Added Milestone 4. This endpoint costs money per call, so it is rate-limited per caller: **10 requests per 60-second fixed window**, keyed on the caller's IP address, returning `RATE_LIMITED` (HTTP 429) once exceeded. The limit is checked before request validation and before any upstream call, so a caller over the limit costs nothing to reject.
+Added Milestone 4. This endpoint costs money per call, so it is rate-limited in two layers, returning `RATE_LIMITED` (HTTP 429) once either is exceeded:
+
+- **Global: 60 requests per 60-second fixed window, across all callers.** Checked first. This is the layer that actually bounds abuse, because its key depends on nothing the caller supplies and so cannot be forged.
+- **Per-caller: 10 requests per 60-second window**, keyed on the address from `X-Forwarded-For`. **Best-effort only.** Verified against the live deployment: Azure Functions on Consumption passes a caller-supplied `X-Forwarded-For` through untouched, so this key is forgeable and provides fairness between honest callers rather than protection against a determined one. Revisit at Milestone 6, when a Static Web Apps linked backend would introduce a trusted hop that can overwrite the header.
+
+Both limits are checked before request validation and before any upstream call, so a caller over the limit costs nothing to reject. Note the consequence: **requests rejected for validation still consume the limit**, since the check happens first. That is deliberate — junk traffic shouldn't be free — but it means a buggy client burns its own allowance.
+
+The global limit's trade-off is bluntness: sustained abuse degrades service for everyone rather than only for the abuser. That is the correct trade here, where spend is unbounded and irreversible while availability of a pre-launch demo is cheap. It would not be for a product with real users.
 
 The limiter fails **open**: if its backing store is unavailable, requests are allowed and the failure is logged. A rate limiter that takes the endpoint down when its own storage breaks converts a cost control into an outage. The Function App's scale limit and the Azure OpenAI deployment's TPM cap still bound the blast radius underneath it.
 
