@@ -1,5 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkRateLimit, RATE_LIMIT_MAX_REQUESTS, type RateLimitDeps } from "./rateLimiter";
+import {
+  checkRateLimit,
+  checkRateLimits,
+  GLOBAL_RATE_LIMIT_KEY,
+  GLOBAL_RATE_LIMIT_MAX_REQUESTS,
+  RATE_LIMIT_MAX_REQUESTS,
+  type RateLimitDeps,
+} from "./rateLimiter";
 import { resolveRateLimitKey } from "./clientAddress";
 
 function makeDeps(existingCount: number | undefined, now = new Date("2026-08-10T12:00:30Z")): RateLimitDeps {
@@ -54,52 +61,79 @@ describe("checkRateLimit", () => {
   });
 });
 
+// The global limit is the control that actually holds, because its key comes
+// from nothing the caller supplies. These assert the property that makes it
+// worth having, not just that a counter counts.
+describe("checkRateLimits", () => {
+  function makeCountingDeps(counts: Record<string, number>): RateLimitDeps {
+    return {
+      container: {
+        item: vi.fn((id: string) => ({
+          read: vi.fn().mockResolvedValue({
+            resource: counts[id.split(":").slice(0, -1).join(":")] === undefined
+              ? undefined
+              : { count: counts[id.split(":").slice(0, -1).join(":")] },
+          }),
+        })),
+        items: { upsert: vi.fn().mockResolvedValue({}) },
+      } as unknown as RateLimitDeps["container"],
+      now: () => new Date("2026-08-10T12:00:30Z"),
+    };
+  }
+
+  it("allows a caller who is under both limits", async () => {
+    const result = await checkRateLimits("ip:203.0.113.7", makeCountingDeps({}));
+    expect(result.allowed).toBe(true);
+  });
+
+  it("blocks once the global limit is reached, whatever the caller key", async () => {
+    const deps = makeCountingDeps({ [GLOBAL_RATE_LIMIT_KEY]: GLOBAL_RATE_LIMIT_MAX_REQUESTS });
+    const result = await checkRateLimits("ip:203.0.113.7", deps);
+    expect(result.allowed).toBe(false);
+  });
+
+  // The bypass that shipped: a caller who rotates a forged address gets a fresh
+  // per-caller bucket every time. The global limit has to catch them anyway.
+  it("still blocks a caller inventing a brand-new address each request", async () => {
+    const deps = makeCountingDeps({ [GLOBAL_RATE_LIMIT_KEY]: GLOBAL_RATE_LIMIT_MAX_REQUESTS });
+    for (const forged of ["ip:1.2.3.4", "ip:9.9.9.9", "ip:5.5.5.5"]) {
+      const result = await checkRateLimits(forged, deps);
+      expect(result.allowed).toBe(false);
+    }
+  });
+
+  it("blocks a single caller over the per-caller limit while the global budget is fine", async () => {
+    const deps = makeCountingDeps({ "ip:203.0.113.7": RATE_LIMIT_MAX_REQUESTS });
+    const result = await checkRateLimits("ip:203.0.113.7", deps);
+    expect(result.allowed).toBe(false);
+  });
+});
+
 describe("resolveRateLimitKey", () => {
-  // The security-relevant behaviour, and the one the first implementation got
-  // wrong: X-Forwarded-For is a request header, so it is caller-controlled.
-  // Platform headers derived from the TCP connection are not, so they win.
-  it("prefers the platform socket address over anything the caller sent", () => {
-    const key = resolveRateLimitKey({
-      socketIp: "203.0.113.7:53124",
-      forwardedFor: "1.2.3.4",
-    });
-    expect(key).toBe("ip:203.0.113.7");
-  });
-
-  it("gives the same key however the caller forges X-Forwarded-For", () => {
-    const honest = resolveRateLimitKey({ socketIp: "203.0.113.7" });
-    const forged = resolveRateLimitKey({ socketIp: "203.0.113.7", forwardedFor: "1.2.3.4, 9.9.9.9" });
-    const forgedAgain = resolveRateLimitKey({ socketIp: "203.0.113.7", forwardedFor: "5.5.5.5:1234" });
-    expect(forged).toBe(honest);
-    expect(forgedAgain).toBe(honest);
-  });
-
-  it("falls back to the client-ip header before touching X-Forwarded-For", () => {
-    const key = resolveRateLimitKey({ clientIp: "203.0.113.7", forwardedFor: "1.2.3.4" });
-    expect(key).toBe("ip:203.0.113.7");
-  });
-
-  it("uses the first X-Forwarded-For entry when no platform header is present", () => {
+  // Note what these do NOT claim. Established empirically against the live
+  // deployment: Azure passes a caller-supplied X-Forwarded-For through
+  // untouched, so this key is a hint for separating honest callers, not a
+  // security boundary. The tests assert parsing, which is all this function is
+  // responsible for; the security property lives in the global limit above.
+  it("uses the first entry, the conventional originating-client position", () => {
     expect(resolveRateLimitKey({ forwardedFor: "203.0.113.7:53124, 10.0.0.1" })).toBe("ip:203.0.113.7");
   });
 
   it("strips the source port so one caller keeps one key", () => {
-    expect(resolveRateLimitKey({ socketIp: "203.0.113.7:53124" })).toBe("ip:203.0.113.7");
-    expect(resolveRateLimitKey({ socketIp: "203.0.113.7:60001" })).toBe("ip:203.0.113.7");
+    expect(resolveRateLimitKey({ forwardedFor: "203.0.113.7:53124" })).toBe("ip:203.0.113.7");
+    expect(resolveRateLimitKey({ forwardedFor: "203.0.113.7:60001" })).toBe("ip:203.0.113.7");
   });
 
   it("handles bracketed IPv6 with a port", () => {
-    expect(resolveRateLimitKey({ socketIp: "[2001:db8::1]:443" })).toBe("ip:2001:db8::1");
+    expect(resolveRateLimitKey({ forwardedFor: "[2001:db8::1]:443" })).toBe("ip:2001:db8::1");
   });
 
   it("leaves bare IPv6 intact rather than mistaking a colon for a port", () => {
-    expect(resolveRateLimitKey({ socketIp: "2001:db8::1" })).toBe("ip:2001:db8::1");
+    expect(resolveRateLimitKey({ forwardedFor: "2001:db8::1" })).toBe("ip:2001:db8::1");
   });
 
-  // Not a free pass: unattributable traffic shares one bucket, so it is still
-  // rate-limited rather than exempt.
-  it("falls back to a shared key when no address can be determined", () => {
+  it("falls back to a shared key when no address is present", () => {
     expect(resolveRateLimitKey({})).toBe("ip:unknown");
-    expect(resolveRateLimitKey({ socketIp: "", forwardedFor: "" })).toBe("ip:unknown");
+    expect(resolveRateLimitKey({ forwardedFor: "" })).toBe("ip:unknown");
   });
 });

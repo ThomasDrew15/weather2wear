@@ -1,59 +1,61 @@
-// Deriving a rate-limit key from the caller's address.
+// Deriving a best-effort rate-limit key from the caller's claimed address.
 //
-// This is the part of the rate limiter most likely to be got wrong quietly, and
-// it was: the first implementation trusted the LAST X-Forwarded-For entry, on
-// the reasoning that Azure appends the real client address to whatever arrived.
-// Tested against the real deployment, that turned out to be false — a caller
-// who was already rate-limited got straight back to HTTP 200 by sending
-// `X-Forwarded-For: 1.2.3.4`, and again with a different value, and again. The
-// limiter was bypassable by anyone who thought to try. See the Milestone 4
-// engineering log.
+// READ THIS BEFORE RELYING ON THE RESULT: on Azure Functions Consumption with
+// no trusted proxy in front, the caller's real address CANNOT be established
+// from a request. This function returns a key that is useful for separating
+// honest callers from each other, and useless against anyone who doesn't want
+// to be identified. The control that actually bounds abuse is the global rate
+// limit in rateLimiter.ts, which depends on no caller-supplied value.
 //
-// The lesson, and the reason this file's order of preference looks the way it
-// does: X-Forwarded-For is a request header, and every request header is
-// attacker-controlled unless a trusted hop is known to overwrite it. Reasoning
-// about which entry a platform "should" add is guesswork. Preferring headers
-// the platform derives from the TCP connection removes the guess — a caller
-// cannot influence the socket they connected from.
+// This was established empirically against the live deployment, after two
+// wrong implementations (see the Milestone 4 engineering log):
 //
-// Order of trust:
-//   1. x-azure-socketip  — the peer address of the TCP connection as Azure's
-//      front end saw it. Not derived from anything the caller sent.
-//   2. x-azure-clientip  — Azure's own determination of the originating client.
-//   3. x-forwarded-for, FIRST entry — the conventional position for the
-//      originating client. Kept only as a fallback, and note it is the weakest
-//      of the three precisely because it is caller-influenced.
-//   4. a fixed key — a shared bucket rather than a free pass. If the address
-//      can't be determined, unattributable traffic gets rate-limited together,
-//      which fails toward protecting the endpoint rather than exempting it.
+//   * Send no headers -> the limit works. So Azure populates X-Forwarded-For
+//     when the client sends none.
+//   * Send `X-Forwarded-For: 1.2.3.4` -> a rate-limited caller is unblocked,
+//     whether the code reads the first entry or the last. So Azure neither
+//     prepends nor appends the real address; it passes a caller-supplied
+//     header through untouched.
+//   * Send `X-Azure-SocketIP` / `X-Azure-ClientIP` -> also honoured, also
+//     forgeable. Those are Azure Front Door headers; with no Front Door in
+//     front of this app, nothing sets them and nothing strips them.
+//
+// The generalisable lesson, which cost two deploys to learn properly: a
+// request header is only trustworthy if a hop you control is known to
+// OVERWRITE it. Not "sets it", not "usually adds it" — overwrites it. Absent
+// that, choosing a different header or a different entry in the list is
+// rearranging attacker-controlled data, which is what both earlier attempts
+// did.
+//
+// This becomes trustworthy at Milestone 6, if the frontend is served through
+// Static Web Apps' linked-backend pattern with access restrictions on the
+// Function App — at which point there IS a trusted hop, and this function
+// should be revisited rather than left as-is.
 
 const FALLBACK_KEY = "ip:unknown";
 
 export type ClientAddressHeaders = {
-  socketIp?: string | null;
-  clientIp?: string | null;
   forwardedFor?: string | null;
 };
 
 export function resolveRateLimitKey(headers: ClientAddressHeaders): string {
-  const platformAddress = firstNonEmpty(headers.socketIp, headers.clientIp);
-  if (platformAddress) return `ip:${stripPort(platformAddress.trim())}`;
+  // First entry only, and only as a hint. The X-Azure-* headers are
+  // deliberately NOT consulted: they are equally forgeable here, and reading
+  // them would imply a trust that doesn't exist.
+  const originating = headers.forwardedFor
+    ?.split(",")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0);
 
-  const forwardedFor = headers.forwardedFor?.split(",").map((entry) => entry.trim()).filter(Boolean) ?? [];
-  const originating = forwardedFor[0];
-  if (originating) return `ip:${stripPort(originating)}`;
+  if (!originating) return FALLBACK_KEY;
 
-  return FALLBACK_KEY;
-}
-
-function firstNonEmpty(...values: (string | null | undefined)[]): string | undefined {
-  return values.find((value) => typeof value === "string" && value.trim().length > 0) ?? undefined;
+  return `ip:${stripPort(originating)}`;
 }
 
 function stripPort(address: string): string {
-  // Azure includes a source port on some of these ("203.0.113.7:53124"), which
-  // must go: left in, the same caller gets a different key on every connection,
-  // and the limit never applies to anyone.
+  // Azure includes a source port ("203.0.113.7:53124"), which must go: left
+  // in, the same caller gets a different key on every connection and the
+  // per-caller limit never applies to anyone.
   //
   // IPv6 arrives bracketed when a port is present ("[2001:db8::1]:443"); an
   // unbracketed IPv6 address contains colons that are not a port separator.
