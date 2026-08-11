@@ -129,6 +129,7 @@ Module boundaries follow directly from the decisions above — each one wraps a 
 - **`backend-compute`** — Function App + plan for v1, swapped for AKS deployment + KEDA `ScaledObject` later. The module the phased-migration plan is built around protecting.
 - **`data`** — Cosmos DB account, database, containers (serverless); also the Azure OpenAI (Cognitive Services) account and model deployment used by the AI-advisor Function (added in Milestone 4). Unchanged across both phases. The OpenAI resource lives here rather than in `backend-compute` for the same reason the Managed Identity lives in `secrets` rather than `backend-compute`: `backend-compute` is destroyed and recreated routinely for cost management (see Cost Management below), and a model deployment is exactly the kind of slow-to-reprovision, quota-scarce resource that must survive that teardown.
 - **`secrets`** — Key Vault (post-bootstrap), the user-assigned Managed Identity, and its role assignments. Referenced by `backend-compute`, but persists independently of it.
+- **`notifications`** — Azure Communication Services account, Email Communication Service, and the sending domain (added Milestone 5). A new module rather than a home in `data`, even though Milestone 4 put Azure OpenAI in `data` on similar reasoning: the load-bearing property both share is surviving `backend-compute` teardown, but an email service in a module named `data` stretches the name past usefulness, and this module also carries a slow, human-paced concern the others don't — domain verification, which for a custom domain means DNS records propagating out-of-band. Referenced by `backend-compute` for its endpoint and sender address; persists independently of it, like `data` and `secrets`.
 - **`observability`** — Log Analytics workspace + Application Insights for v1; same module later points the OTel Collector at Prometheus/Grafana instead.
 
 ### Dev/live parity: separate directories per environment
@@ -160,6 +161,38 @@ Module boundaries follow directly from the decisions above — each one wraps a 
 
 Needed to deliver the magic-link/OTP emails specified in the data model (`loginTokens` container). Chosen over a third-party vendor (SendGrid, Postmark, Resend) for the same reason as the rest of the stack: pay-as-you-go pricing based on message count and data volume with no meaningful upfront cost at this project's volume, Terraform-provisionable, and works with Managed Identity rather than introducing a separate API-key relationship to manage as another secret.
 
+### Milestone 5 prework: three decisions the original entry didn't anticipate
+
+The paragraph above was written in Milestone 0 and holds — ACS is still the right choice. But "works with Managed Identity rather than introducing a separate API-key relationship" turned out to need real work to be true, rather than being true by default.
+
+**1. `disableLocalAuth`, and why it needs the `azapi` provider.** `azurerm_communication_service` exports `primary_key`, `secondary_key` and both connection strings as resource attributes, so Terraform records them in state simply by managing the resource — the identical finding to Milestone 4's `azurerm_cognitive_account`. Milestone 4 closed that path with `local_auth_enabled = false`; **`azurerm` exposes no equivalent argument for ACS**, and there is not even an open provider issue tracking one. ARM does support it (`disableLocalAuth` on `Microsoft.Communication/communicationServices`, present through API version `2026-03-18`).
+
+Three options were weighed:
+
+| Option | Key in state? | Cost |
+|---|---|---|
+| `azurerm` + set `disableLocalAuth` out-of-band via `az rest` | Yes, but inert | Depends on undocumented `listKeys` behaviour once local auth is off; adds a manual per-environment step, which is a landmine specifically in the path of the first `live` apply |
+| **`azapi_resource`** | **No — `azapi` never calls `listKeys`** | A third provider in a repo that has only used `azurerm` and `random`; loses `terraform validate`-time schema checking on that one resource |
+| `azurerm` + treat the connection string as a Key Vault secret | Yes, and live | Knowingly reverses the convention every service since Milestone 2 has followed |
+
+**Decision: `azapi_resource` for the Communication Services account only.** It is the only option that actually achieves the stated convention ("prefer no secret at all") rather than approximating it, and it dissolves the `listKeys` unknown instead of depending on the answer. `azapi` is a Microsoft-published first-party provider that exists precisely for the case where `azurerm` hasn't caught up with ARM, so this is a deliberate use of the intended escape hatch rather than a workaround. The Email Communication Service and its domain stay on `azurerm` — neither exports a key, so neither has the problem.
+
+The real cost, stated rather than glossed: `azapi` takes an ARM request body rather than a typed schema, so a misspelled property surfaces as an Azure rejection at apply time instead of a `terraform validate` failure. This repo has banked value from that safety net before (Milestone 1 §5.2, Milestone 2 §3), and is giving it up on exactly one resource.
+
+**2. The role is not least-privilege, and can't be.** Every other service in this stack got a narrow data-plane role — `Cognitive Services OpenAI User`, `Key Vault Secrets User`, Cosmos Built-in Data Contributor. ACS has exactly one built-in role, `Communication and Email Service Owner`, and it contains `ListKeys/action`, `RegenerateKey/action` and `delete`. Microsoft's documented alternative is `Contributor`, which is broader still, and custom roles are reported not to be honoured by ACS at all (a claim worth testing at build time rather than trusting). So the app identity will hold key-reading rights whichever role is granted.
+
+This is what turns decision 1 from a state-hygiene preference into the load-bearing control: with local auth enabled, a compromised Function could mint itself a permanent ACS credential that outlives the Function App. With it disabled, those keys are inert and the identity's excess permissions cost nothing. Recorded in the threat model.
+
+**3. Azure Managed Domain now, custom domain later.** An Azure Managed Domain is free, instant and needs no DNS, but is capped at **5 emails/minute and 10/hour per subscription, with no increase available** — Microsoft states higher quotas are only ever granted for verified custom domains. A custom domain gets 30/minute and 100/hour but needs a domain you own plus TXT/DKIM/SPF/DMARC records added out-of-band per environment.
+
+**Decision: build and verify Milestone 5 on the managed domain**, treating the 10/hour ceiling as an accepted pre-launch constraint with a revisit trigger at Milestone 6 — the same pattern as the anonymous AI-advisor endpoint, and the same shape as Milestone 2's accepted dev/live Met Office quota sharing. It is genuinely sufficient for a project with no users; it is genuinely insufficient for one with any. The API contracts doc's global rate limit of 5 per 60-minute window is set directly by this ceiling.
+
+### Sessions
+
+**Decision: opaque token stored in a `sessions` Cosmos container, not a signed JWT.**
+
+A JWT avoids a read per request, which is its whole appeal, but requires a signing key — a long-lived secret to store, rotate and protect, in a project whose position since Milestone 2 has been that the best secret is the one that doesn't exist — and it cannot be revoked before expiry, which would make a logout endpoint decorative. An opaque token trades one Cosmos point read, the cheapest operation available at serverless tier, for no new secret and real revocation. Shape and partitioning reasoning are in the data model doc.
+
 ---
 
 ## Cost Management (Later Phase)
@@ -183,8 +216,9 @@ This only works cleanly because of two decisions made earlier: the per-layer mod
 - Data: Cosmos DB (serverless)
 - CI/CD: GitHub Actions, OIDC to Azure
 - Secrets: Azure Key Vault, user-assigned Managed Identity
+- Notifications: Azure Communication Services (Email), Azure Managed Domain for v1
 - Observability: OpenTelemetry → Azure Monitor
-- IaC: Terraform, modules per layer (`bootstrap`, `frontend`, `backend-compute`, `data`, `secrets`, `observability`), separate `environments/dev` and `environments/live` root modules
+- IaC: Terraform, modules per layer (`bootstrap`, `frontend`, `backend-compute`, `data`, `secrets`, `notifications`, `observability`), separate `environments/dev` and `environments/live` root modules. Providers: `azurerm` and `random` throughout, plus `azapi` for the single ACS account resource (see Notifications above)
 
 **Later phase (target, once v1 is validated):**
 - Frontend + backend: containers on AKS
