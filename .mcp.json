@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "terraform": {
+      "command": "sh",
+      "args": [
+        "-c",
+        "exec \"$(go env GOPATH)/bin/terraform-mcp-server\" stdio --toolsets registry"
+      ],
+      "env": {}
+    }
+  }
+}

@@ -24,7 +24,21 @@ What was actually built, why, and what went wrong along the way — one entry pe
 - [Milestone 2 — Data & Secrets](docs/milestone-2-data-secrets.md)
 - [Milestone 3 — Backend Compute Core](docs/milestone-3-backend-compute-core.md)
 - [Milestone 4 — AI Advisor](docs/milestone-4-ai-advisor.md)
-- Milestone 5 — Accounts Backend *(not started)*
+- Milestone 5 — Accounts Backend *(in progress — design complete, see the [API contracts doc](docs/weather-outfit-advisor-api-contracts.md#accounts-endpoints-milestone-5))*
 - Milestone 6 — Frontend *(not started)*
 - Milestone 7 — Observability & Polish *(not started)*
 - Milestone 8 — AKS + KEDA Migration *(later phase, not started)*
+
+## Development tooling
+
+The repo carries its own Claude Code configuration, so the working practices below travel with the code rather than living on one machine.
+
+- [`.claude/skills/milestone-prework/`](.claude/skills/milestone-prework/SKILL.md) — the design pass run before any code is written for a milestone: verify assumptions against the design docs, check platform claims live, record deviations dated rather than editing quietly
+- [`.claude/skills/milestone-log/`](.claude/skills/milestone-log/SKILL.md) — the engineering-log format, including the rule that verification output is never invented
+- [`.mcp.json`](.mcp.json) — the [Terraform MCP server](https://github.com/hashicorp/terraform-mcp-server), scoped to registry lookups so it needs no token. It reads current provider schemas from the registry, which matters here: this project has been caught three separate times by `azurerm` attribute renames ahead of provider v5.0
+
+**Prerequisite** for the MCP server, resolved via `$(go env GOPATH)` rather than a hardcoded path:
+
+```bash
+go install github.com/hashicorp/terraform-mcp-server/cmd/terraform-mcp-server@latest
+```
